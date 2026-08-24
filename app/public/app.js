@@ -379,17 +379,15 @@ function planeCard(axX, axY, ix, iy, posX, posY, optX, optY) {
   const hasOpt = optX != null && optY != null;
   return `<div class="plane-wrap">
     <div class="plane-lbl top">${esc(axY.a)}</div>
-    <div class="plane-row">
-      <div class="plane-lbl side left">${esc(axX.a)}</div>
-      <div class="plane-grid" data-ix="${ix}" data-iy="${iy}">
-        ${hasOpt ? `<svg class="plane-traj" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <line x1="${posX}" y1="${posY}" x2="${optX}" y2="${optY}"/>
-          </svg>
-          <div class="plane-target" style="left:${optX}%;top:${optY}%" title="Оптимум"></div>` : ""}
-        <div class="plane-dot" data-x="${ix}" data-y="${iy}" style="left:${posX}%;top:${posY}%"></div>
-      </div>
-      <div class="plane-lbl side right">${esc(axX.b)}</div>
+    <div class="plane-lbl side left">${esc(axX.a)}</div>
+    <div class="plane-grid" data-ix="${ix}" data-iy="${iy}">
+      ${hasOpt ? `<svg class="plane-traj" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="${posX}" y1="${posY}" x2="${optX}" y2="${optY}"/>
+        </svg>
+        <div class="plane-target" style="left:${optX}%;top:${optY}%" title="Оптимум"></div>` : ""}
+      <div class="plane-dot" data-x="${ix}" data-y="${iy}" style="left:${posX}%;top:${posY}%"></div>
     </div>
+    <div class="plane-lbl side right">${esc(axX.b)}</div>
     <div class="plane-lbl bottom">${esc(axY.b)}</div>
     <p class="plane-read" data-x="${ix}" data-y="${iy}">${esc(beamRead(axX, posX))} · ${esc(beamRead(axY, posY))}</p>
   </div>`;
@@ -465,8 +463,12 @@ function viewAxis() {
     с ${axes.length} измерениями, а не одну линию.</p>` : ""}
   <div class="stack" style="margin-top:22px">
     ${axes.length === 0 ? `<p class="note">Агент не выделил ось натяжения — вернитесь к прочтениям и уточните ситуацию.</p>` : `
-      ${axes.map(polesCard).join("")}
-      <p class="plane-hint big">${multi ? "Не согласны с оценкой — потяните точку на плоскости." : "Не согласны с оценкой — подвиньте ползунок сами."}</p>
+      ${axes.map((ax, i) => (multi
+        ? `<div class="axgroup"><div class="eyebrow">Парадокс ${i + 1} · ${esc(ax.a)} — ${esc(ax.b)}</div>${polesCard(ax)}</div>`
+        : polesCard(ax))).join("")}
+      <p class="plane-hint big">${multi
+        ? "Не согласны с оценкой — поставьте точку сами: нажмите в нужное место на плоскости или перетащите маркер."
+        : "Не согласны с оценкой — подвиньте ползунок сами."}</p>
       ${multi ? planes : axes.map((ax, i) => beamCard(ax, i, S.positions[i])).join("")}
     `}
 
@@ -573,7 +575,10 @@ function viewSheet() {
         </div>`;
     const a = d.approaches.find(x => x.id === S.approachId) || d.approaches[0];
     body = `
-      <div class="sect"><div class="k">${term("полюс", "Полюса")}</div>${axes.map(polesCard).join("")}</div>
+      <div class="sect"><div class="k">${term("полюс", "Полюса")}</div>
+        ${axes.map((axx, i) => (multi
+          ? `<div class="axgroup"><div class="eyebrow">Парадокс ${i + 1} · ${esc(axx.a)} — ${esc(axx.b)}</div>${polesCard(axx)}</div>`
+          : polesCard(axx))).join("")}</div>
       <div class="sect"><div class="k">Где мы сейчас${multi ? " · ⊙ — куда двигаться" : ""}</div>${whereNow}</div>
       <div class="sect"><div class="k">Выбранный подход · ${esc(APPR_NAME[a.id])}</div>
         <p style="font-size:.92rem;color:var(--ink-2)">${esc(a.why)}</p>
@@ -1021,20 +1026,34 @@ function planePointFromEvent(e) {
   const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
   return { x: Math.round(x), y: Math.round(y) };
 }
+function applyPlanePoint(e) {
+  const p = planePointFromEvent(e);
+  if (p) { setAxisPosition(dragPlane.ix, p.x); setAxisPosition(dragPlane.iy, p.y); }
+}
 document.addEventListener("pointerdown", (e) => {
   const el = e.target.closest(".plane-grid");
   if (!el) return;
-  dragPlane = { el, ix: Number(el.dataset.ix), iy: Number(el.dataset.iy) };
-  el.setPointerCapture?.(e.pointerId);
-  const p = planePointFromEvent(e);
-  if (p) { setAxisPosition(dragPlane.ix, p.x); setAxisPosition(dragPlane.iy, p.y); }
+  // На мыши тянем откуда угодно. На пальце непрерывное перетаскивание начинаем
+  // только с самого маркера — иначе квадрат перехватит вертикальный свайп
+  // и страницу нельзя будет проскроллить. Касание по полю ставит точку на отпускании.
+  const fromDot = Boolean(e.target.closest(".plane-dot"));
+  const drag = e.pointerType !== "touch" || fromDot;
+  dragPlane = { el, ix: Number(el.dataset.ix), iy: Number(el.dataset.iy), drag, moved: false };
+  if (!drag) return;
+  (fromDot ? e.target.closest(".plane-dot") : el).setPointerCapture?.(e.pointerId);
+  applyPlanePoint(e);
 });
 document.addEventListener("pointermove", (e) => {
   if (!dragPlane) return;
-  const p = planePointFromEvent(e);
-  if (p) { setAxisPosition(dragPlane.ix, p.x); setAxisPosition(dragPlane.iy, p.y); }
+  if (!dragPlane.drag) { dragPlane.moved = true; return; }
+  applyPlanePoint(e);
 });
-document.addEventListener("pointerup", () => { dragPlane = null; });
+document.addEventListener("pointerup", (e) => {
+  // Касание без протяжки = поставить точку сюда. Протяжку не трогаем: это был скролл.
+  if (dragPlane && !dragPlane.drag && !dragPlane.moved) applyPlanePoint(e);
+  dragPlane = null;
+});
+document.addEventListener("pointercancel", () => { dragPlane = null; });
 
 function provPaint() {
   const box = $("#prov");

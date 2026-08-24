@@ -117,7 +117,7 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     must(!q("#view-diag").innerHTML.includes("Оптимум"), "оптимум убран с шага оси — он теперь в конце");
     must(!q("[data-name]"), "называние типа уже сделано — на шаге оси кнопок нет");
     must(!q("#view-diag").innerHTML.includes("Кейсы из библиотеки"), "кейсы убраны с шага оси");
-    must(q("#view-diag").innerHTML.includes("подвиньте ползунок") || q("#view-diag").innerHTML.includes("потяните точку"), "подсказка про ручную правку положения есть");
+    must(q("#view-diag").innerHTML.includes("подвиньте ползунок") || q("#view-diag").innerHTML.includes("поставьте точку сами"), "подсказка про ручную правку положения есть");
     must(document.querySelectorAll(".pole .i").length >= 2, "подсказки «i» есть у полюсов и на шаге оси");
     must(q("#toDecideParadox") && !q("#toDecideParadox").disabled, "агент направлений решений запустился в фоне сам, без клика — кнопка уже разблокирована");
     click(q("#toDecideParadox"));
