@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Внутренний тренажёр для сессий, а не публичная страница: в поиск ей не надо.
+     Дублирует заголовок X-Robots-Tag из server.mjs — на случай, если страницу
+     когда-нибудь начнут отдавать не нашим сервером. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<script>
+  // Ставим тему до первой отрисовки, чтобы не мигало.
+  try {
+    var t = localStorage.getItem("paradox.theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<title>Карта натяжения</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">Карта натяжения<small>Школа управления СКОЛКОВО</small></div>
+    <nav class="nav" id="nav">
+      <button data-view="diag" aria-current="page"><i></i>Диагностика</button>
+      <button data-view="history"><i></i>История<span class="badge" id="histCount" hidden>0</span></button>
+      <button data-view="theory"><i></i>Теория</button>
+    </nav>
+    <div class="rail-foot">
+      <div class="seg" id="theme" role="group" aria-label="Тема оформления">
+        <button data-theme-set="auto" title="Как в системе">Авто</button>
+        <button data-theme-set="light" title="Светлая тема">Светлая</button>
+        <button data-theme-set="dark" title="Тёмная тема">Тёмная</button>
+      </div>
+      <div class="seg" id="prov" role="group" aria-label="Модель" hidden></div>
+      <span class="chip" id="mode"><b></b><span>—</span></span>
+      <button class="back noprint" id="restart" style="padding:0;text-align:left">Новый разбор</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="col">
+      <section id="view-diag"></section>
+      <section id="view-history" hidden></section>
+      <section id="view-theory" hidden></section>
+    </div>
+  </main>
+</div>
+<script src="/app.js" type="module"></script>
+</body>
+</html>

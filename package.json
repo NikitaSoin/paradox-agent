@@ -1,0 +1,17 @@
+{
+  "name": "paradox-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Тренажёр различения проблема/дилемма/парадокс — СКОЛКОВО",
+  "scripts": {
+    "start": "node app/server.mjs",
+    "test": "node app/test-flow.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "paradox-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test-flow.mjs",
+    "pack": "node pack.mjs",
+    "pack:keys": "node pack.mjs --with-keys"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
