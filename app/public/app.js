@@ -8,6 +8,7 @@ const GLYPH = (t) => `<span class="glyph ${t}"><i></i><i></i></span>`;
 const FLAG = { yes: "есть", partly: "частично", no: "нет", unknown: "не ясно" };
 const APPR_NAME = { super: "Выход в надсистему", split: "Дробление до дилеммы или проблемы",
   space: "Разнесение в пространстве / во времени", synth: "Синтез" };
+const APPR_TERM = { super: "выход в надсистему", split: "дробление", space: "разнесение", synth: "синтез" };
 const FIT = { high: "подходит", medium: "с оговорками", low: "не сейчас" };
 
 /* ----------------------------- подсказки «i» ---------------------------- */
@@ -61,6 +62,13 @@ function themePaint() {
 const HIST_KEY = "paradox.history.v1";
 const HIST_MAX = 50;
 
+// Совместимость со старыми записями, сохранёнными до переверстки шагов.
+const LEGACY_STEP = { read: "questions", refine: "readings" };
+const STAGE_LABEL = {
+  questions: "вопросы", readings: "прочтения", axis: "ось", decide: "решения", sheet: "карта собрана",
+  read: "вопросы", refine: "прочтения",
+};
+
 function histLoad() {
   try { const v = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(v) ? v : []; }
   catch { return []; }
@@ -78,7 +86,7 @@ function histBadge() {
   const n = histLoad().length;
   el.textContent = String(n); el.hidden = n === 0;
 }
-/** Создаёт или обновляет запись текущего прогона. */
+/** Создаёт или обновляет запись текущего прогона. stage — это S.step на момент вызова. */
 function histUpsert(stage) {
   if (!S.runId || !S.read) return;
   const list = histLoad();
@@ -87,15 +95,15 @@ function histUpsert(stage) {
     id: S.runId,
     at: i >= 0 ? list[i].at : Date.now(),
     updated: Date.now(),
-    stage,                                  // read | refine | decide | sheet
+    stage,
     demo: !S.live,
     situation: S.situation,
     restated: S.read.restated,
-    guess: S.read.hypothesis?.type || null,
+    guess: S.refine?.hypothesis?.type || null,
     chosenType: S.chosenType,
-    axisIndex: S.axisIndex, position: S.position,
-    axisName: S.refine?.axes?.[S.axisIndex]
-      ? `${S.refine.axes[S.axisIndex].a} — ${S.refine.axes[S.axisIndex].b}` : null,
+    axisIndex: S.axisIndex, positions: S.positions,
+    axisName: S.refine?.axes?.length
+      ? S.refine.axes.map(a => `${a.a} — ${a.b}`).join(" · ") : null,
     approachId: S.approachId, firstStep: S.firstStep,
     answers: S.answers, free: S.free, extra: S.extra,
     read: S.read, refine: S.refine, decide: S.decide,
@@ -109,13 +117,13 @@ function histClear() { try { localStorage.removeItem(HIST_KEY); } catch {} histB
 function histOpen(id) {
   const e = histLoad().find(x => x.id === id);
   if (!e) return;
+  const step = LEGACY_STEP[e.stage] || e.stage || "questions";
   Object.assign(S, {
     runId: e.id, situation: e.situation, read: e.read, refine: e.refine, decide: e.decide,
     answers: e.answers || {}, free: e.free || {}, extra: e.extra || "", chosenType: e.chosenType, axisIndex: e.axisIndex ?? 0,
-    position: e.position ?? 50, approachId: e.approachId, firstStep: e.firstStep || "",
-    step: e.stage === "sheet" ? "sheet" : e.stage === "decide" ? "decide"
-      : e.stage === "refine" ? "refine" : "read",
-    error: null, busy: false,
+    positions: e.positions || (e.position != null ? [e.position] : (e.refine?.axes || []).map(a => a.position?.value ?? 50)),
+    approachId: e.approachId, firstStep: e.firstStep || "",
+    step, error: null, busy: false, decideRequested: Boolean(e.decide),
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
 }
@@ -125,7 +133,7 @@ const PROV_KEY = "paradox.provider";
 const S = {
   live: false, provider: null, providers: [], step: "input", situation: "", runId: null,
   read: null, answers: {}, free: {}, extra: "", refine: null,
-  chosenType: null, axisIndex: 0, position: 50,
+  chosenType: null, axisIndex: 0, positions: [], decideRequested: false,
   decide: null, approachId: null, firstStep: "", error: null, busy: false, savedNote: null,
 };
 
@@ -181,12 +189,11 @@ async function run(step, ctx) {
 /** Сохраняет текущий разбор в историю и очищает состояние под новый. */
 function parkAndReset() {
   const had = Boolean(S.read);
-  if (had) histUpsert(S.step === "sheet" ? "sheet" : S.step === "decide" ? "decide"
-    : S.step === "refine" ? "refine" : "read");
+  if (had) histUpsert(S.step);
   const note = had ? { id: S.runId, title: S.read.restated, done: S.step === "sheet" } : null;
   Object.assign(S, {
     step: "input", situation: "", runId: null, read: null, answers: {}, free: {}, extra: "",
-    refine: null, chosenType: null, axisIndex: 0, position: 50, decide: null,
+    refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
     approachId: null, firstStep: "", error: null, busy: false, savedNote: note,
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
@@ -200,9 +207,9 @@ function parkButton() {
 
 /* ------------------------------- экраны ------------------------------- */
 
-const STEP_ORDER = ["input", "read", "refine", "decide", "sheet"];
+const STEP_ORDER = ["input", "questions", "readings", "axis", "decide", "sheet"];
 function stepsBar() {
-  const i = STEP_ORDER.indexOf(S.step === "name" ? "refine" : S.step);
+  const i = STEP_ORDER.indexOf(S.step);
   return `<div class="steps">${STEP_ORDER.map((_, n) =>
     `<i class="${n < i ? "done" : n === i ? "now" : ""}"></i>`).join("")}</div>`;
 }
@@ -218,8 +225,8 @@ function viewInput() {
   return `${stepsBar()}
   <div class="eyebrow">Шаг 1 · Ситуация</div>
   <h1 style="margin-top:10px">Опишите управленческий вызов, с которым имеете дело</h1>
-  <p class="lede">Два-три предложения своими словами: что за напряжение, между чем и чем вас тянет,
-  почему это встало именно сейчас. Без названий компаний и людей — они не нужны.</p>
+  <p class="lede">Опишите двумя-тремя предложениями своими словами — дальше мы зададим уточняющие
+  вопросы, чтобы точнее определить тип вашей ситуации. Без названий компаний и людей — они не нужны.</p>
   ${S.savedNote ? `<div class="card hl" style="margin-top:20px">
     <div class="k">${S.savedNote.done ? "Разбор завершён" : "Разбор отложен"}</div>
     <p style="font-size:.93rem">«${esc(S.savedNote.title)}» сохранён в истории${S.savedNote.done ? "" : " на том шаге, где вы остановились"}.
@@ -262,17 +269,6 @@ function hypothesisCard(h) {
   </div>`;
 }
 
-function typeRef() {
-  return `<div class="card flat">
-    <div class="k">Что означают три типа</div>
-    <div class="meta">
-      ${["problem", "dilemma", "paradox"].map(t =>
-        `<div><b>${GLYPH(t)}${term(RU[t])}</b><span>Способ: ${VERB[t]}</span></div>`).join("")}
-    </div>
-    <div style="margin-top:12px"><button class="more" data-theory="t-types">Чем они отличаются и чем грозит путаница</button></div>
-  </div>`;
-}
-
 function challengesCard(list) {
   if (!list?.length) return "";
   return `<div class="card">
@@ -280,8 +276,11 @@ function challengesCard(list) {
     <p class="note" style="margin-bottom:12px">Живая ситуация редко состоит из одного вызова.
     Разбираем тот, что помечен как основной — можно переключиться на любой другой.</p>
     <div class="chal">${list.map(c => `<div>
-      <div class="t"><b>${GLYPH(c.type)}${esc(c.title)}</b>
-        <span>${term(RU[c.type])} · ${esc(c.why)}</span></div>
+      <div class="t">
+        <div class="chal-type">${GLYPH(c.type)}<b>${term(RU[c.type], RU[c.type])}</b></div>
+        <p class="chal-def">${esc(GLOSS[RU[c.type]]?.short || "")}</p>
+        <div class="chal-sub"><b>${esc(c.title)}</b><span>${esc(c.why)}</span></div>
+      </div>
       ${c.primary
         ? '<span class="cur">разбираем</span>'
         : `<button class="icon" data-focus="${esc(c.title)}">Разобрать этот</button>`}
@@ -289,7 +288,7 @@ function challengesCard(list) {
   </div>`;
 }
 
-function viewRead() {
+function viewQuestions() {
   const r = S.read;
   const q = r.questions.map((qq, i) => {
     const sel = S.answers[qq.id];
@@ -309,19 +308,11 @@ function viewRead() {
   const answered = r.questions.filter(qq => (S.free[qq.id] || "").trim() || S.answers[qq.id]).length;
 
   return `${stepsBar()}
-  <div class="eyebrow">Шаг 2 · Чтение и вопросы</div>
-  <h1 style="margin-top:10px">Что я понял и что нужно уточнить</h1>
+  <div class="eyebrow">Шаг 2 из 6 · Вопросы</div>
+  <h1 style="margin-top:10px">Уточняющие вопросы по вашей ситуации</h1>
   <div class="stack" style="margin-top:22px">
     <div class="tile"><div class="k">Ситуация, как я её понял</div><p>${esc(r.restated)}</p></div>
     ${challengesCard(r.challenges)}
-    ${hypothesisCard(r.hypothesis)}
-    ${typeRef()}
-    ${r.axes?.length ? `<div class="card"><div class="k">Кандидатные ${term("ось", "оси")} натяжения</div>
-      <div class="stack-s">${r.axes.map(a => `<div class="reading">
-        <h4>${esc(a.a)} — ${esc(a.b)}</h4>
-        <p>${esc(a.why)}</p>
-        <p class="cost">${a.library_name ? "Из библиотеки: " + esc(a.library_name) : "Своя ось — в библиотеке такой нет"}</p>
-      </div>`).join("")}</div></div>` : ""}
 
     <div class="card hl">
       <div class="k">Зачем эти вопросы</div>
@@ -347,91 +338,90 @@ function viewRead() {
   </div>`;
 }
 
-function axisBlock(ax, editable) {
-  const pos = editable ? S.position : ax.position.value;
-  const read = pos < 35 ? `Перекос к «${ax.a.toLowerCase()}» — ${100 - pos} против ${pos}`
+function beamRead(ax, pos) {
+  return pos < 35 ? `Перекос к «${ax.a.toLowerCase()}» — ${100 - pos} против ${pos}`
     : pos > 65 ? `Перекос к «${ax.b.toLowerCase()}» — ${pos} против ${100 - pos}`
     : `Примерно в равновесии — ${100 - pos} против ${pos}`;
-  return `<div class="stack">
-    <div class="poles">
-      <div class="pole a"><div class="pk">Полюс A</div><h4>${esc(ax.a)}</h4>
-        <p><b>Даёт.</b> ${esc(ax.gives_a)}</p><p class="bad"><b>${term("перекос", "Перекос")}.</b> ${esc(ax.over_a)}</p></div>
-      <div class="pole b"><div class="pk">Полюс B</div><h4>${esc(ax.b)}</h4>
-        <p><b>Даёт.</b> ${esc(ax.gives_b)}</p><p class="bad"><b>${term("перекос", "Перекос")}.</b> ${esc(ax.over_b)}</p></div>
+}
+
+/** Оси и их положение, с правкой пользователя, для передачи агенту на шаг решений. */
+function chosenAxesCtx() {
+  return (S.refine.axes || []).map((a, i) => ({ ...a, userPosition: S.positions[i] ?? a.position?.value ?? 50 }));
+}
+
+function polesCard(ax) {
+  return `<div class="poles">
+    <div class="pole a"><div class="pk">${term("полюс", "Полюс")} A</div><h4>${esc(ax.a)}</h4>
+      <p><b>Даёт.</b> ${esc(ax.gives_a)}</p><p class="bad"><b>${term("перекос", "Перекос")}.</b> ${esc(ax.over_a)}</p></div>
+    <div class="pole b"><div class="pk">${term("полюс", "Полюс")} B</div><h4>${esc(ax.b)}</h4>
+      <p><b>Даёт.</b> ${esc(ax.gives_b)}</p><p class="bad"><b>${term("перекос", "Перекос")}.</b> ${esc(ax.over_b)}</p></div>
+  </div>`;
+}
+
+function beamCard(ax, i, pos) {
+  return `<div class="card">
+    <div class="k">Где вы сейчас — ${esc(ax.a)} / ${esc(ax.b)}</div>
+    <div class="beam-lbl"><span>${esc(ax.a)}</span><span>${esc(ax.b)}</span></div>
+    <input type="range" class="beam" data-axis="${i}" min="0" max="100" value="${pos}" aria-label="Положение на оси: ${esc(ax.a)} — ${esc(ax.b)}">
+    <div class="beam-read" data-beamread="${i}">${esc(beamRead(ax, pos))}</div>
+    <p class="note" style="margin-top:10px">${esc(ax.position.why)}</p>
+    <div class="scale">
+      <div><b>У полюса A</b>${esc(ax.scale_meaning.left)}</div>
+      <div><b>Середина</b>${esc(ax.scale_meaning.mid)}</div>
+      <div><b>У полюса B</b>${esc(ax.scale_meaning.right)}</div>
     </div>
-    <div class="card">
-      <div class="k">Где вы сейчас</div>
-      <div class="beam-lbl"><span>${esc(ax.a)}</span><span>${esc(ax.b)}</span></div>
-      <input type="range" id="beam" min="0" max="100" value="${pos}" ${editable ? "" : "disabled"} aria-label="Положение на оси">
-      <div class="beam-read" id="beamread">${esc(read)}</div>
-      <p class="note" style="margin-top:10px">${esc(ax.position.why)}</p>
-      <div class="scale">
-        <div><b>У полюса A</b>${esc(ax.scale_meaning.left)}</div>
-        <div><b>Середина</b>${esc(ax.scale_meaning.mid)}</div>
-        <div><b>У полюса B</b>${esc(ax.scale_meaning.right)}</div>
+  </div>`;
+}
+
+/** Плоскость двух осей: положение показывается точкой, а не отдельной линией.
+ * optX/optY — если заданы, дополнительно рисуют цель (оптимум) и траекторию к ней. */
+function planeCard(axX, axY, ix, iy, posX, posY, optX, optY) {
+  const hasOpt = optX != null && optY != null;
+  return `<div class="plane-wrap">
+    <div class="plane-lbl top">${esc(axY.a)}</div>
+    <div class="plane-row">
+      <div class="plane-lbl side left">${esc(axX.a)}</div>
+      <div class="plane-grid" data-ix="${ix}" data-iy="${iy}">
+        ${hasOpt ? `<svg class="plane-traj" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="${posX}" y1="${posY}" x2="${optX}" y2="${optY}"/>
+          </svg>
+          <div class="plane-target" style="left:${optX}%;top:${optY}%" title="Оптимум"></div>` : ""}
+        <div class="plane-dot" data-x="${ix}" data-y="${iy}" style="left:${posX}%;top:${posY}%"></div>
       </div>
+      <div class="plane-lbl side right">${esc(axX.b)}</div>
     </div>
-    <div class="card">
-      <div class="k">${ax.optimum.exists ? "Оптимум есть" : "Устойчивого оптимума нет"}</div>
+    <div class="plane-lbl bottom">${esc(axY.b)}</div>
+    <p class="plane-read" data-x="${ix}" data-y="${iy}">${esc(beamRead(axX, posX))} · ${esc(beamRead(axY, posY))}</p>
+  </div>`;
+}
+
+function passportCard(ax) {
+  return `<div class="sect"><div class="k">${ax.optimum.exists ? "Куда целиться: точка есть" : "Устойчивой точки нет — держим коридор"}${term("оптимум", "")}</div>
       <p style="font-size:.92rem;color:var(--ink-2)">${esc(ax.optimum.where)}</p>
-      <p style="font-size:.92rem;margin-top:10px"><b>Как двигаться.</b> ${esc(ax.optimum.how_to_move)}</p>
-    </div>
-    <div class="card">
-      <div class="k">Паспорт натяжения</div>
+      <p style="font-size:.92rem;margin-top:10px"><b>Как двигаться.</b> ${esc(ax.optimum.how_to_move)}</p></div>
+    <div class="sect"><div class="k">Паспорт ${term("натяжение", "натяжения")}</div>
       <div class="meta">
         <div><b>${term("триггер", "Триггер")}</b><span>${esc(ax.trigger)}</span></div>
         <div><b>${term("темпоральность", "Темпоральность")}</b><span>${esc(ax.temporal)}</span></div>
         <div><b>Уровень</b><span>${esc(ax.level)}</span></div>
         <div><b>${term("конститутивность", "Конститутивность")}</b><span>${esc(ax.verdict)}</span></div>
         <div><b>Типичная ошибка</b><span>${esc(ax.mistake)}</span></div>
-      </div>
-    </div>
-  </div>`;
+      </div></div>`;
 }
 
-function caseCard(c) {
-  return `<div class="caseb ${c.sign === "+" ? "pos" : "neg"}">
-    <div class="tag">${c.sign === "+" ? "позитивный" : "негативный"} · ${esc(c.axis)}</div>
-    <h4>${esc(c.company)}</h4>
-    <p style="color:var(--ink-2)">${esc(c.summary || "")}</p>
-    <p style="margin-top:8px"><b>Чем это про вас.</b> ${esc(c.why_relevant)}</p>
-    <div style="margin-top:9px"><button class="more" data-theory="${esc(caseAnchor(c.company))}">Полный кейс с фактурой</button></div>
-  </div>`;
-}
-
-/** Якорь конкретного кейса в справочнике; если не нашли — общий раздел. */
-function caseAnchor(company) {
-  const slug = (company || "").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-|-$/g, "");
-  return slug ? "case-" + slug : "t-cases";
-}
-
-function viewRefine() {
+function viewReadings() {
   const r = S.refine;
-  const axes = r.axes || [];
-  const ax = axes[S.axisIndex];
   return `${stepsBar()}
-  <div class="eyebrow">Шаг 3 · Три прочтения</div>
+  <div class="eyebrow">Шаг 3 из 6 · Три прочтения</div>
   <h1 style="margin-top:10px">Одну и ту же ситуацию можно прочесть тремя способами</h1>
-  <p class="lede">${esc(r.what_changed)}</p>
   <div class="stack" style="margin-top:22px">
     ${hypothesisCard(r.hypothesis)}
     <div class="card"><div class="k">Как это выглядит в каждой рамке</div>
       <div class="stack" style="gap:20px">${r.readings.map(rd => `<div class="reading">
-        <h4>${GLYPH(rd.type)}Если это ${RU[rd.type]} — способ ${VERB[rd.type]}</h4>
+        <h4>${GLYPH(rd.type)}Если это ${term(RU[rd.type], RU[rd.type])} — способ ${VERB[rd.type]}</h4>
         <p>${esc(rd.looks)}</p>
-        <p><b>Что тогда делать.</b> ${esc(rd.action)}</p>
         <p class="cost"><b>Цена ошибки.</b> ${esc(rd.cost_if_wrong)}</p></div>`).join("")}</div>
     </div>
-
-    ${axes.length ? `<div>
-      <div class="eyebrow" style="margin-bottom:10px">Ось натяжения${axes.length > 1 ? ` · ${axes.length} оси, выберите разбираемую` : ""}</div>
-      ${axes.length > 1 ? `<div class="stack-s" style="margin-bottom:14px">${axes.map((a, i) =>
-        `<button class="pick" data-axis="${i}" aria-pressed="${i === S.axisIndex}"><b>${esc(a.a)} — ${esc(a.b)}</b></button>`).join("")}</div>` : ""}
-      ${axisBlock(ax, true)}
-    </div>` : ""}
-
-    ${r.cases?.length ? `<div class="card"><div class="k">Кейсы из библиотеки</div>
-      ${r.cases.map(caseCard).join("")}</div>` : ""}
 
     <div class="card">
       <div class="k">Назвать может только тот, кто внутри ситуации</div>
@@ -443,34 +433,57 @@ function viewRefine() {
           `<button class="pick" data-name="${t}"><b>${GLYPH(t)}Это ${RU[t]}</b><span>Способ: ${VERB[t]}</span></button>`).join("")}
       </div>
     </div>
+
     ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
     ${S.busy ? thinkBox("Агент собирает направления решений") : ""}
   </div>
-  <div class="acts"><button class="back" data-goto="read">Вернуться к вопросам</button>${parkButton()}</div>`;
+  <div class="acts">
+    <button class="back" data-goto="questions">Назад к вопросам</button>
+    ${parkButton()}
+  </div>`;
 }
 
-const APPR_TERM = { super: "выход в надсистему", split: "дробление", space: "разнесение", synth: "синтез" };
+function viewAxis() {
+  const r = S.refine;
+  const axes = r.axes || [];
+  if (!S.positions.length && axes.length) S.positions = axes.map(a => a.position?.value ?? 50);
+  const multi = axes.length > 1;
+  const planes = axes.length === 2
+    ? planeCard(axes[0], axes[1], 0, 1, S.positions[0], S.positions[1])
+    : axes.length === 3
+    ? `<div class="planes3">
+        ${planeCard(axes[0], axes[1], 0, 1, S.positions[0], S.positions[1])}
+        ${planeCard(axes[0], axes[2], 0, 2, S.positions[0], S.positions[2])}
+        ${planeCard(axes[1], axes[2], 1, 2, S.positions[1], S.positions[2])}
+      </div>`
+    : "";
+  return `${stepsBar()}
+  <div class="eyebrow">Шаг 4 из 6 · ${multi ? "Оси натяжения" : "Ось натяжения"}</div>
+  <h1 style="margin-top:10px">${multi ? `${axes.length} парадокса держим одновременно` : "Полюса и положение на оси"}</h1>
+  ${multi ? `<p class="lede">В ситуации не одно натяжение, а ${axes.length}. Выбирать, с каким работать
+    дальше, не нужно — держим оба сразу: вместе они образуют ${axes.length === 2 ? "плоскость" : "пространство"}
+    с ${axes.length} измерениями, а не одну линию.</p>` : ""}
+  <div class="stack" style="margin-top:22px">
+    ${axes.length === 0 ? `<p class="note">Агент не выделил ось натяжения — вернитесь к прочтениям и уточните ситуацию.</p>` : `
+      ${axes.map(polesCard).join("")}
+      <p class="plane-hint big">${multi ? "Не согласны с оценкой — потяните точку на плоскости." : "Не согласны с оценкой — подвиньте ползунок сами."}</p>
+      ${multi ? planes : axes.map((ax, i) => beamCard(ax, i, S.positions[i])).join("")}
+    `}
 
-function planBlock(d) {
-  const r = d.rhythm;
-  return `${d.plan?.length ? `<div class="card"><div class="k">Что дальше — после первого шага</div>
-    <div class="plan">${d.plan.map(p => `<div>
-      <div class="h">${esc(p.horizon)}</div>
-      <div class="w">${esc(p.what)}</div>
-      <div class="d">Сделано, когда: ${esc(p.done_when)}</div></div>`).join("")}</div></div>` : ""}
-  ${r ? `<div class="card"><div class="k">${term("ритм", "Ритм")} и ${term("держатель")}</div>
-    <div class="meta">
-      <div><b>Как часто</b><span>${esc(r.cadence)}</span></div>
-      <div><b>Кто держит</b><span>${esc(r.holder)}</span></div>
-      <div><b>Куда пристегнуть</b><span>${esc(r.where)}</span></div>
-      <div><b>Первый пересмотр</b><span>${esc(r.first_review)}</span></div>
-    </div></div>` : ""}`;
+    ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
+    ${S.busy ? thinkBox("Агент собирает направления решений") : ""}
+  </div>
+  <div class="acts">
+    <button class="go" id="toDecideParadox" ${S.decide ? "" : "disabled"}>${S.decide ? "Далее — к направлениям решений" : "Считаем направления решений…"}</button>
+    <button class="back" data-goto="readings">Назад к прочтениям</button>
+    ${parkButton()}
+  </div>`;
 }
 
 function viewDecideParadox() {
   const d = S.decide;
   return `${stepsBar()}
-  <div class="eyebrow">Шаг 4 · Области и направления принятия решений</div>
+  <div class="eyebrow">Шаг 5 из 6 · Области и направления принятия решений</div>
   <h1 style="margin-top:10px">Четыре подхода к вашей оси</h1>
   <p class="lede">Готового решения здесь нет и не будет: инструмент даёт примеры и вопросы,
   решение принимаете вы. Выберите подход, к которому готовы сделать первый шаг.</p>
@@ -483,33 +496,18 @@ function viewDecideParadox() {
       </div>
       <p style="font-size:.9rem;color:var(--ink-2)">${esc(a.why)}</p>
       <ul class="qs">${a.questions.map(q => `<li>${esc(q)}</li>`).join("")}</ul>
-      <p style="font-size:.9rem;margin-top:12px"><b>Первый шаг.</b> ${esc(a.first_step)}</p>
-      ${a.case_company ? `<div class="caseb"><div class="tag">кейс-близнец</div>
-        <h4>${esc(a.case_company)}</h4>
-        <p style="color:var(--ink-2)">${esc(a.case_summary || "")}</p>
-        <p style="margin-top:8px"><b>Чем это про вас.</b> ${esc(a.case_why)}</p>
-        <div style="margin-top:9px"><button class="more" data-theory="${esc(caseAnchor(a.case_company))}">Полный кейс с фактурой</button></div>
-      </div>` : (a.case_why ? `<p class="note" style="margin-top:12px">Кейса в библиотеке нет: ${esc(a.case_why)}</p>` : "")}
+      ${a.id === d.recommended ? `<div class="card hl" style="margin-top:12px">
+        <div class="k">Почему я рекомендую именно это</div>
+        <p style="font-size:.9rem">${esc(d.recommended_why)}</p></div>` : ""}
       <div class="acts" style="margin-top:14px">
         <button class="pick" data-appr="${esc(a.id)}" aria-pressed="${S.approachId === a.id}"
                 style="width:auto;padding:8px 16px"><b>Выбрать этот подход</b></button>
       </div>
     </div>`).join("")}
-
-    <div class="card"><div class="k">Почему этот</div>
-      <p style="font-size:.92rem;color:var(--ink-2)">${esc(d.recommended_why)}</p></div>
-    ${planBlock(d)}
-    <div class="card"><div class="k">Ранний сигнал ${term("перекос", "перекоса")}</div>
-      <p style="font-size:.92rem;color:var(--ink-2)">${esc(d.watch)}</p></div>
-
-    <div class="card">
-      <div class="k">Ваш первый шаг</div>
-      <input type="text" id="first" value="${esc(S.firstStep)}" placeholder="Одно конкретное действие с датой">
-    </div>
   </div>
   <div class="acts">
     <button class="go" id="tosheet" ${S.approachId ? "" : "disabled"}>Собрать карту</button>
-    <button class="back" data-goto="refine">Назад к прочтениям</button>
+    <button class="back" data-goto="axis">Назад к оси</button>
     ${parkButton()}
   </div>`;
 }
@@ -538,12 +536,12 @@ function viewDecideSimple() {
     <div class="card"><div class="k">Контрольный вопрос</div>
       <p style="font-size:.93rem;color:var(--ink-2)">${esc(d.return_check)}</p></div>`;
   return `${stepsBar()}
-  <div class="eyebrow">Шаг 4 · Работа с типом «${RU[t]}»</div>
+  <div class="eyebrow">Шаг 5 из 6 · Работа с типом «${RU[t]}»</div>
   <h1 style="margin-top:10px">${t === "problem" ? "Проблема закрывается решением" : "Дилемма закрывается выбором"}</h1>
   <div class="stack" style="margin-top:22px">${body}</div>
   <div class="acts">
     <button class="go" id="tosheet">Собрать карту</button>
-    <button class="back" data-goto="refine">Назад к прочтениям</button>
+    <button class="back" data-goto="readings">Назад к прочтениям</button>
     ${parkButton()}
   </div>`;
 }
@@ -552,36 +550,41 @@ function viewSheet() {
   const t = S.chosenType, d = S.decide;
   const date = new Date().toLocaleDateString("ru-RU");
   let body = "";
-  if (t === "paradox" && S.refine.axes?.[S.axisIndex]) {
-    const ax = S.refine.axes[S.axisIndex];
+  if (t === "paradox" && S.refine.axes?.length) {
+    const axes = S.refine.axes;
+    const ai = Math.min(S.axisIndex, axes.length - 1);
+    const ax = axes[ai];
+    const pos = S.positions[ai] ?? ax.position.value;
+    const multi = axes.length > 1;
+    const whereNow = !multi
+      ? `<div class="beam-lbl"><span>${esc(ax.a)}</span><span>${esc(ax.b)}</span></div>
+         <div class="beam-track">
+           <input type="range" min="0" max="100" value="${pos}" disabled aria-hidden="true">
+           <div class="beam-traj" style="left:${Math.min(pos, ax.optimum.target)}%;width:${Math.abs(ax.optimum.target - pos)}%"></div>
+           <div class="beam-target" style="left:${ax.optimum.target}%" title="Оптимум"></div>
+         </div>
+         <p class="beam-optlbl">⊙ Оптимум — ориентир, куда двигаться</p>`
+      : axes.length === 2
+      ? planeCard(axes[0], axes[1], 0, 1, S.positions[0], S.positions[1], axes[0].optimum.target, axes[1].optimum.target)
+      : `<div class="planes3">
+          ${planeCard(axes[0], axes[1], 0, 1, S.positions[0], S.positions[1], axes[0].optimum.target, axes[1].optimum.target)}
+          ${planeCard(axes[0], axes[2], 0, 2, S.positions[0], S.positions[2], axes[0].optimum.target, axes[2].optimum.target)}
+          ${planeCard(axes[1], axes[2], 1, 2, S.positions[1], S.positions[2], axes[1].optimum.target, axes[2].optimum.target)}
+        </div>`;
     const a = d.approaches.find(x => x.id === S.approachId) || d.approaches[0];
     body = `
-      <div class="sect"><div class="k">Полюса</div>
-        <div class="poles">
-          <div class="pole a"><div class="pk">Полюс A</div><h4>${esc(ax.a)}</h4>
-            <p><b>Даёт.</b> ${esc(ax.gives_a)}</p><p class="bad"><b>Перекос.</b> ${esc(ax.over_a)}</p></div>
-          <div class="pole b"><div class="pk">Полюс B</div><h4>${esc(ax.b)}</h4>
-            <p><b>Даёт.</b> ${esc(ax.gives_b)}</p><p class="bad"><b>Перекос.</b> ${esc(ax.over_b)}</p></div>
-        </div></div>
-      <div class="sect"><div class="k">Где мы сейчас</div>
-        <div class="beam-lbl"><span>${esc(ax.a)}</span><span>${esc(ax.b)}</span></div>
-        <input type="range" min="0" max="100" value="${S.position}" disabled aria-hidden="true">
-        <p class="note" style="margin-top:10px">${esc(ax.optimum.exists ? ax.optimum.where : "Устойчивого оптимума нет. " + ax.optimum.where)}</p></div>
+      <div class="sect"><div class="k">${term("полюс", "Полюса")}</div>${axes.map(polesCard).join("")}</div>
+      <div class="sect"><div class="k">Где мы сейчас${multi ? " · ⊙ — куда двигаться" : ""}</div>${whereNow}</div>
       <div class="sect"><div class="k">Выбранный подход · ${esc(APPR_NAME[a.id])}</div>
         <p style="font-size:.92rem;color:var(--ink-2)">${esc(a.why)}</p>
-        <ul class="qs">${a.questions.map(q => `<li>${esc(q)}</li>`).join("")}</ul>
-        <p style="margin-top:14px"><b>Первый шаг.</b> ${esc(S.firstStep || a.first_step)}</p></div>
-      ${d.plan?.length ? `<div class="sect"><div class="k">Что дальше</div>
-        <div class="plan">${d.plan.map(p => `<div><div class="h">${esc(p.horizon)}</div>
-          <div class="w">${esc(p.what)}</div>
-          <div class="d">Сделано, когда: ${esc(p.done_when)}</div></div>`).join("")}</div></div>` : ""}
-      ${d.rhythm ? `<div class="sect"><div class="k">Ритм и держатель</div><div class="meta">
-        <div><b>Как часто</b><span>${esc(d.rhythm.cadence)}</span></div>
-        <div><b>Кто держит</b><span>${esc(d.rhythm.holder)}</span></div>
-        <div><b>Куда пристегнуть</b><span>${esc(d.rhythm.where)}</span></div>
-        <div><b>Первый пересмотр</b><span>${esc(d.rhythm.first_review)}</span></div></div></div>` : ""}
-      <div class="sect"><div class="k">Ранний сигнал перекоса</div>
-        <p style="font-size:.92rem;color:var(--ink-2)">${esc(d.watch)}</p></div>`;
+        <ul class="qs">${a.questions.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>
+      ${multi ? `<div class="stack-s noprint" style="margin:2px 0 -8px">
+        ${axes.map((axx, i) => `<div>
+          <div class="eyebrow" style="margin:0 0 4px">Парадокс ${i + 1}</div>
+          <button class="pick" data-axis="${i}" aria-pressed="${i === ai}"><b>${esc(axx.a)} — ${esc(axx.b)}</b></button>
+        </div>`).join("")}
+      </div>` : ""}
+      ${passportCard(ax)}`;
   } else if (t === "paradox") {
     body = `<div class="sect"><div class="k">Ось не заполнена</div>
       <p style="font-size:.93rem;color:var(--ink-2)">Агент не выделил ось натяжения — вернитесь
@@ -605,11 +608,12 @@ function viewSheet() {
   <h1 class="noprint" style="margin:10px 0 20px">Ваша карта</h1>
   <div class="sheet">
     <div class="sheet-h">
-      <div><h2>${esc(S.refine.axes?.[S.axisIndex] ? S.refine.axes[S.axisIndex].a + " — " + S.refine.axes[S.axisIndex].b : S.read.restated)}</h2>
-        <p class="note">${GLYPH(t)}${RU[t]} · способ: ${VERB[t]}</p></div>
+      <div><h2>${t === "paradox"
+        ? term("парадокс", S.refine.axes?.length > 1 ? `${S.refine.axes.length} парадокса` : "Парадокс")
+        : term(RU[t], RU[t][0].toUpperCase() + RU[t].slice(1))}</h2>
+        <p class="note">${GLYPH(t)}способ: ${VERB[t]}</p></div>
       <span class="note" style="font-family:var(--mono);font-size:.7rem">${date}</span>
     </div>
-    <div class="sect"><div class="k">Ситуация</div><p style="font-size:.93rem">${esc(S.read.restated)}</p></div>
     ${body}
   </div>
   <div class="acts noprint">
@@ -633,12 +637,26 @@ function viewTheory(T) {
   return `
   <div class="eyebrow">Справочник</div>
   <h1 style="margin-top:10px">Проблема, дилемма, парадокс</h1>
-  <p class="lede">Материал исследования Школы управления СКОЛКОВО. Всё, на что опирается агент
-  в соседней вкладке, лежит здесь — включая источники.</p>
-  <div class="toc">${[["types", "Три типа"], ["cost", "Цена ошибки"], ["crit", "Критерии"],
-    ["tests", "Тесты"], ["appr", "Четыре подхода"], ["algo", "Алгоритм"], ["pos", "Две позиции"],
-    ["pass", "Шесть паспортов"], ["lib", "34 парадокса"], ["cases", "Кейсы"], ["src", "Источники"]]
-    .map(([id, n]) => `<button data-jump="t-${id}">${n}</button>`).join("")}</div>
+  <p class="lede">Прежде чем что-то решать, полезно понять, с вызовом какого рода вы имеете дело —
+  у каждого свой способ действия, и перепутать их дорого. Проблему устраняют, дилемму разрешают
+  выбором, а парадокс не решается раз и навсегда — с ним нужно научиться постоянно работать,
+  удерживая обе стороны натяжения одновременно.</p>
+  <div class="trio">
+    <figure><img src="/img/problem.jpg" alt="Проблема: дорога завалена камнями"><figcaption>Проблема — препятствие с решением</figcaption></figure>
+    <figure><img src="/img/dilemma.jpg" alt="Дилемма: развилка дорог"><figcaption>Дилемма — выбор между дорогами</figcaption></figure>
+    <figure><img src="/img/paradox.jpg" alt="Парадокс: человек тянет канат в обе стороны"><figcaption>Парадокс — натяжение, которое держат</figcaption></figure>
+  </div>
+  <div class="k" style="margin:22px 0 10px">Содержание</div>
+  <div class="book-toc">${[
+    ["types", "Три типа управленческого вызова", "Что такое проблема, дилемма и парадокс — и чем один отличается от другого"],
+    ["cost", "Цена неправильного диагноза", "Что бывает, если перепутать один тип вызова с другим"],
+    ["crit", "Критерии парадокса", "По каким признакам отличить парадокс от дилеммы или обычной проблемы"],
+    ["tests", "Диагностические тесты", "Короткие вопросы к себе, которые помогают проверить гипотезу о типе вызова"],
+    ["appr", "Четыре подхода к парадоксу", "Что можно делать с парадоксом, если решили не устранять его, а удерживать"],
+    ["algo", "Алгоритм работы с парадоксом", "Как это выглядит по шагам: диагноз → настройка → цикл"],
+    ["pos", "Две позиции", "Два взгляда на то, стоит ли искать выход из парадокса или с ним нужно научиться жить"],
+    ["pass", "Примеры парадоксов", "Шесть разобранных примеров: полюса, кейсы, типичные ошибки"],
+  ].map(([id, n, d]) => `<button data-jump="t-${id}"><b>${n}</b><span>${d}</span></button>`).join("")}</div>
 
   ${sec("types", "Три типа управленческого вызова", T.types.map(t => `<div class="card">
     <h3>${GLYPH(t.id)}${esc(t.name)} — способ: ${esc(t.verb)}</h3>
@@ -661,7 +679,7 @@ function viewTheory(T) {
   ${sec("crit", "Критерии парадокса — 4+2", T.criteria.map(c => `<div class="card">
     <h4>${esc(c.name)} ${c.necessary ? '<span class="flag yes">необходимый</span>' : ""} ${c.signal ? '<span class="flag partly">сигнальный</span>' : ""}</h4>
     <p style="margin-top:8px;font-size:.92rem;color:var(--ink-2)">${esc(c.text)}</p>
-    ${c.examples.length ? `<ul class="qs" style="margin-top:10px">${c.examples.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
+    ${c.examples.length && c.id !== "structural" ? `<ul class="qs" style="margin-top:10px">${c.examples.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
   </div>`).join(""))}
 
   ${sec("tests", "Диагностические тесты", `<div class="card"><div class="meta">
@@ -689,7 +707,7 @@ function viewTheory(T) {
       <ul class="qs">${T.positions.dissolve.methods.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>
     <div class="card flat"><p style="font-size:.92rem;color:var(--ink-2)">${esc(T.positions.note)}</p></div>`)}
 
-  ${sec("pass", "Шесть паспортов по сетке из 11 параметров", T.passports.map(p => `<div class="card">
+  ${sec("pass", "Примеры парадоксов", T.passports.map(p => `<div class="card">
     <h3>${esc(p.name)}</h3>
     <p class="note" style="margin-top:4px">${esc(p.sl)} · ${esc(p.verdict)}</p>
     <div class="poles" style="margin-top:14px">
@@ -704,28 +722,11 @@ function viewTheory(T) {
       <div><b>Темпоральность</b><span>${esc(p.temporal)}</span></div>
       <div><b>Триггер</b><span>${esc(p.trigger)}</span></div>
       <div><b>Способ работы</b><span>${esc(p.way)}</span></div>
-      <div><b>Типичная ошибка</b><span>${esc(p.mistake)}</span></div></div></div>`).join(""))}
-
-  ${sec("lib", "34 организационных парадокса с первоисточниками", `<div class="card flat scroll">
-    <table class="lib"><thead><tr><th>№</th><th>Парадокс</th><th>Полюса</th><th>Smith &amp; Lewis</th><th>Источник</th></tr></thead>
-    <tbody>${T.library.map(p => `<tr><td class="n">${p.n}</td>
-      <td><b>${esc(p.ru)}</b><br><span class="note">${esc(p.en)}</span></td>
-      <td>${esc(p.a)}<br><span class="note">против</span><br>${esc(p.b)}</td>
-      <td>${esc(p.sl)}</td><td class="src">${esc(p.src)}</td></tr>`).join("")}</tbody></table></div>`)}
-
-  ${sec("cases", "Библиотека кейсов", T.cases.map(c => `<div class="caseb ${c.sign === "+" ? "pos" : "neg"}" id="${esc(caseAnchor(c.company))}">
-    <div class="tag">${c.sign === "+" ? "позитивный" : "негативный"} · ${esc(c.axis)}${c.region ? " · " + esc(c.region) : ""}</div>
-    <h4>${esc(c.company)}</h4><p style="color:var(--ink-2)">${esc(c.text)}</p>
-    ${c.move ? `<p style="margin-top:8px"><b>Ключевой ход.</b> ${esc(c.move)}</p>` : ""}</div>`).join(""))}
-
-  ${sec("src", "Источники в архиве проекта", `<div class="card flat"><div class="meta">
-    ${T.sources.map(s => `<div><b style="flex-basis:280px;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:.72rem">${esc(s.file)}</b><span>${esc(s.gives)}</span></div>`).join("")}
-    </div></div>`)}`;
+      <div><b>Типичная ошибка</b><span>${esc(p.mistake)}</span></div></div></div>`).join(""))}`;
 }
 
 function viewHistory() {
   const list = histLoad();
-  const STAGE = { read: "чтение", refine: "прочтения", decide: "решения", sheet: "карта собрана" };
   if (!list.length) {
     return `<div class="eyebrow">История</div>
     <h1 style="margin-top:10px">Здесь будут ваши разборы</h1>
@@ -751,9 +752,9 @@ function viewHistory() {
           <p class="sit">${esc(e.situation.length > 160 ? e.situation.slice(0, 160) + "…" : e.situation)}</p>
           <div class="tags">
             ${named}
-            <span class="flag">${STAGE[e.stage] || e.stage}</span>
+            <span class="flag">${STAGE_LABEL[e.stage] || e.stage}</span>
             ${e.stage !== "sheet" ? '<span class="flag partly">не завершён</span>' : ""}
-            ${e.axisName ? `<span class="flag">${esc(e.axisName)}</span>` : ""}
+            ${e.axisName ? `<span class="flag long">${esc(e.axisName)}</span>` : ""}
             ${e.demo ? '<span class="flag no">демо</span>' : ""}
           </div>
         </div>
@@ -782,6 +783,20 @@ async function goTheory(anchor) {
   });
 }
 
+/** Запускает разбор направлений решений сразу по приходу на шаг оси, не дожидаясь клика «Далее». */
+function maybeAutoDecide() {
+  if (S.step !== "axis" || S.chosenType !== "paradox" || S.decide || S.decideRequested || S.busy) return;
+  S.decideRequested = true;
+  (async () => {
+    const ctx = { situation: S.situation, read: S.read, refine: S.refine,
+      chosenType: "paradox", chosenAxes: chosenAxesCtx() };
+    const data = await run("decide_paradox", ctx);
+    if (data) { S.decide = data; S.approachId = data.recommended || null; }
+    else { S.decideRequested = false; }
+    render();
+  })();
+}
+
 function render() {
   const d = $("#view-diag"), h = $("#view-history"), t = $("#view-theory");
   d.hidden = view !== "diag"; h.hidden = view !== "history"; t.hidden = view !== "theory";
@@ -790,10 +805,12 @@ function render() {
   histBadge();
   if (view === "history") { h.innerHTML = viewHistory(); return; }
   if (view !== "diag") return;
+  maybeAutoDecide();
   d.innerHTML =
     S.step === "input" ? viewInput() :
-    S.step === "read" ? viewRead() :
-    S.step === "refine" ? viewRefine() :
+    S.step === "questions" ? viewQuestions() :
+    S.step === "readings" ? viewReadings() :
+    S.step === "axis" ? viewAxis() :
     S.step === "decide" ? (S.chosenType === "paradox" ? viewDecideParadox() : viewDecideSimple()) :
     S.step === "sheet" ? viewSheet() : "";
   const sit = $("#sit"); if (sit) sit.focus();
@@ -813,7 +830,10 @@ document.addEventListener("click", async (e) => {
   const focus = e.target.closest("[data-focus]");
   if (focus) {
     const data = await run("read", { situation: S.situation, focus: focus.dataset.focus, extra: S.extra });
-    if (data) { S.read = data; S.answers = {}; S.free = {}; histUpsert("read"); render(); window.scrollTo({ top: 0 }); }
+    if (data) {
+      S.read = data; S.answers = {}; S.free = {}; S.step = "questions";
+      histUpsert("questions"); render(); window.scrollTo({ top: 0 });
+    }
     return;
   }
 
@@ -874,9 +894,9 @@ document.addEventListener("click", async (e) => {
     if (S.situation.length < 15) { S.error = "Добавьте пару предложений — по одной фразе разобрать нечего."; render(); return; }
     const data = await run("read", { situation: S.situation });
     if (data) {
-      S.read = data; S.answers = {}; S.step = "read";
+      S.read = data; S.answers = {}; S.step = "questions";
       S.runId = (globalThis.crypto?.randomUUID?.() || String(Date.now()) + Math.random().toString(16).slice(2));
-      histUpsert("read");
+      histUpsert("questions");
       render(); window.scrollTo({ top: 0 });
     }
     return;
@@ -896,9 +916,9 @@ document.addEventListener("click", async (e) => {
     }));
     const data = await run("refine", { situation: S.situation, read: S.read, answers, extra: S.extra });
     if (data) {
-      S.refine = data; S.axisIndex = 0;
-      S.position = data.axes?.[0]?.position?.value ?? 50;
-      S.step = "refine"; histUpsert("refine");
+      S.refine = data; S.axisIndex = 0; S.decide = null; S.decideRequested = false;
+      S.positions = (data.axes || []).map(a => a.position?.value ?? 50);
+      S.step = "readings"; histUpsert("readings");
       render(); window.scrollTo({ top: 0 });
     }
     return;
@@ -907,21 +927,33 @@ document.addEventListener("click", async (e) => {
   const axb = e.target.closest("[data-axis]");
   if (axb) {
     S.axisIndex = Number(axb.dataset.axis);
-    S.position = S.refine.axes[S.axisIndex].position.value;
-    histUpsert(S.decide ? "decide" : "refine"); render(); return;
+    histUpsert(S.step); render(); return;
   }
 
   const nameBtn = e.target.closest("[data-name]");
   if (nameBtn) {
     S.chosenType = nameBtn.dataset.name;
+    if (S.chosenType === "paradox") {
+      // Для парадокса сначала смотрим ось (оси) — направления решений запускаются
+      // в фоне сразу, не дожидаясь клика «Далее» (см. maybeAutoDecide). Для проблемы
+      // и дилеммы ось не нужна, туда не заходим — сразу считаем разбор.
+      S.step = "axis"; histUpsert("axis"); render(); window.scrollTo({ top: 0 });
+      return;
+    }
     const step = "decide_" + S.chosenType;
     const ctx = { situation: S.situation, read: S.read, refine: S.refine,
-      chosenType: S.chosenType, chosenAxis: S.refine.axes?.[S.axisIndex] || null };
+      chosenType: S.chosenType, chosenAxes: chosenAxesCtx() };
     const data = await run(step, ctx);
     if (data) {
       S.decide = data; S.approachId = data.recommended || null; S.step = "decide";
       histUpsert("decide"); render(); window.scrollTo({ top: 0 });
     }
+    return;
+  }
+
+  if (e.target.closest("#toDecideParadox")) {
+    if (!S.decide) return; // ещё считается в фоне — кнопка должна быть недоступна
+    S.step = "decide"; histUpsert("decide"); render(); window.scrollTo({ top: 0 });
     return;
   }
 
@@ -957,15 +989,52 @@ document.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "extra") { S.extra = e.target.value; return; }
-  if (e.target.id === "beam") {
-    S.position = Number(e.target.value);
-    const ax = S.refine.axes[S.axisIndex];
-    const p = S.position;
-    $("#beamread").textContent = p < 35 ? `Перекос к «${ax.a.toLowerCase()}» — ${100 - p} против ${p}`
-      : p > 65 ? `Перекос к «${ax.b.toLowerCase()}» — ${p} против ${100 - p}`
-      : `Примерно в равновесии — ${100 - p} против ${p}`;
+  if (e.target.classList?.contains("beam")) {
+    const i = Number(e.target.dataset.axis);
+    setAxisPosition(i, Number(e.target.value));
   }
 });
+
+/** Правит положение по одной оси везде, где оно показано: балка и точки на всех плоскостях. */
+function setAxisPosition(i, value) {
+  S.positions[i] = value;
+  const ax = S.refine.axes[i];
+  const readEl = document.querySelector(`[data-beamread="${i}"]`);
+  if (readEl) readEl.textContent = beamRead(ax, value);
+  document.querySelectorAll(".plane-dot").forEach(d => {
+    if (Number(d.dataset.x) === i) d.style.left = value + "%";
+    if (Number(d.dataset.y) === i) d.style.top = value + "%";
+  });
+  document.querySelectorAll(".plane-read").forEach(el => {
+    if (Number(el.dataset.x) === i || Number(el.dataset.y) === i) {
+      const axX = S.refine.axes[Number(el.dataset.x)], axY = S.refine.axes[Number(el.dataset.y)];
+      el.textContent = `${beamRead(axX, S.positions[Number(el.dataset.x)])} · ${beamRead(axY, S.positions[Number(el.dataset.y)])}`;
+    }
+  });
+}
+
+let dragPlane = null;
+function planePointFromEvent(e) {
+  const rect = dragPlane.el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+  const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
+  return { x: Math.round(x), y: Math.round(y) };
+}
+document.addEventListener("pointerdown", (e) => {
+  const el = e.target.closest(".plane-grid");
+  if (!el) return;
+  dragPlane = { el, ix: Number(el.dataset.ix), iy: Number(el.dataset.iy) };
+  el.setPointerCapture?.(e.pointerId);
+  const p = planePointFromEvent(e);
+  if (p) { setAxisPosition(dragPlane.ix, p.x); setAxisPosition(dragPlane.iy, p.y); }
+});
+document.addEventListener("pointermove", (e) => {
+  if (!dragPlane) return;
+  const p = planePointFromEvent(e);
+  if (p) { setAxisPosition(dragPlane.ix, p.x); setAxisPosition(dragPlane.iy, p.y); }
+});
+document.addEventListener("pointerup", () => { dragPlane = null; });
 
 function provPaint() {
   const box = $("#prov");

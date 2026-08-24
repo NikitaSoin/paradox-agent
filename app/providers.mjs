@@ -44,7 +44,9 @@ function deepseekProvider() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) return null;
   const base = trim(process.env.DEEPSEEK_BASE_URL) || "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-pro";
+  // v4-flash почти вдвое быстрее v4-pro на нашей схеме (замер: ~150s против ~260-370s
+  // на полный трёхшаговый разбор) при сопоставимом качестве — берём его по умолчанию.
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 
   async function once({ system, user, schema, maxTokens, onThinking }) {
     const sys = system.map(b => b.text).join("\n\n") +
@@ -69,7 +71,7 @@ function deepseekProvider() {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = "", out = "", usage = null;
+    let buf = "", out = "", usage = null, finishReason = null;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -86,9 +88,10 @@ function deepseekProvider() {
         if (!d) continue;
         if (d.reasoning_content) onThinking?.(d.reasoning_content);
         if (d.content) out += d.content;
+        if (ev.choices?.[0]?.finish_reason) finishReason = ev.choices[0].finish_reason;
       }
     }
-    return { text: out, usage };
+    return { text: out, usage, finishReason };
   }
 
   return {
@@ -102,11 +105,20 @@ function deepseekProvider() {
         const missing = missingKeys(json, opts.schema);
         if (missing.length) throw new Error("нет полей: " + missing.join(", "));
       } catch (e) {
-        // Одна попытка починки: возвращаем модели её же ответ и ошибку.
+        // DeepSeek иногда отдаёт пустой или обрезанный ответ на тяжёлой схеме —
+        // такое видно по finish_reason/длине текста. Логируем перед починкой,
+        // чтобы это было заметно, а не тонуло в обычном потоке запросов.
+        console.error(`[deepseek] чиню ответ: ${e.message} (finish=${first.finishReason}, len=${first.text.length})`);
+        // Если модель упёрлась в лимит токенов, повтор с тем же лимитом упрётся
+        // в ту же стену — на починку даём заметно больше места.
+        const hitLimit = first.finishReason === "length" || first.text.length === 0;
         const repair = await once({
           ...opts,
+          maxTokens: hitLimit ? Math.min(Math.round(opts.maxTokens * 1.6), 32000) : opts.maxTokens,
           user: opts.user +
             "\n\n---\nПРЕДЫДУЩАЯ ПОПЫТКА НЕ ПРОШЛА ПРОВЕРКУ: " + e.message +
+            (hitLimit ? "\nПохоже, ты исчерпал лимит токенов на рассуждения, не дойдя до ответа. " +
+              "Рассуждай короче и переходи к ответу раньше." : "") +
             "\nВот что ты вернул:\n" + first.text.slice(0, 4000) +
             "\nВерни исправленный JSON целиком, строго по схеме.",
         });
