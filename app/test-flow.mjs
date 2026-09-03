@@ -15,10 +15,12 @@ window.confirm = () => true;
 window.print = () => {};
 
 // Заглушка сети: /api/config, /api/theory и SSE-поток /api/step из демо-данных.
+let apiCalls = 0; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
 const fakeFetch = async (url, opts) => {
   if (url === "/api/config") return { ok: true, json: async () => ({ live: false, model: "claude-opus-5" }) };
   if (url === "/api/theory") return { ok: true, json: async () => THEORY };
   if (url === "/api/step") {
+    apiCalls++;
     const { step } = JSON.parse(opts.body);
     const payload = `event: thinking\ndata: ${JSON.stringify({ text: "…" })}\n\n` +
       `event: done\ndata: ${JSON.stringify({ data: mockStep(step), demo: true })}\n\n`;
@@ -64,6 +66,11 @@ must(opts.length > 0, `варианты ответов отрисованы (${o
 must(!q("#view-diag").innerHTML.includes("undefined"), "в разметке нет undefined");
 must(q(".tile"), "ситуация вынесена в плитку, а не в заголовок");
 must(document.querySelectorAll(".chal > div").length === 3, "разбор ситуации на три вызова");
+{ // ситуация обязана быть прочитана во всех трёх рамках, а не только в одной
+  const shown = [...document.querySelectorAll(".chal .chal-type")].map(el => el.textContent.trim().toLowerCase());
+  ["проблема", "дилемма", "парадокс"].forEach(t =>
+    must(shown.some(s => s.includes(t)), `на шаге 2 есть прочтение «${t}»`));
+}
 must(q("[data-focus]"), "неосновной вызов можно выбрать для разбора");
 must(q(".card.hl"), "блок «зачем эти вопросы» подсвечен");
 must(document.querySelectorAll("[data-free]").length === opts.length / 3 || document.querySelectorAll("[data-free]").length > 0, "у каждого вопроса есть поле своего ответа");
@@ -203,6 +210,25 @@ click(q(".hrow"));
 await wait(60);
 must(!q("#view-diag").hidden && q(".sheet"), "запись открылась на собранной карте");
 
+// Листание завершённой записи: назад до самого начала и обратно вперёд,
+// и ни на одном шаге агент не должен дёргаться.
+const callsBefore = apiCalls;
+must(q("[data-browse]"), "у завершённой записи тоже режим просмотра");
+must(!q("#resume"), "у завершённого разбора «продолжить» не предлагается");
+const backBtn = () => [...document.querySelectorAll("[data-browse]")].find(b => b.textContent.trim() === "Назад");
+let hops = 0;
+while (backBtn() && !backBtn().disabled && hops < 10) { click(backBtn()); await wait(30); hops++; }
+// Запись — ветка «дилемма», шага оси в ней нет: ввод → вопросы → прочтения → решения → карта.
+must(hops === 4, `пролистали назад все шаги до ввода (прошли ${hops})`);
+must(q("#sit"), "самый первый шаг — экран ввода ситуации");
+must(q("#sit").disabled, "в просмотре поле ввода недоступно для правки");
+const fwdBtn = () => [...document.querySelectorAll("[data-browse]")].find(b => b.textContent.trim().startsWith("Вперёд"));
+let f = 0;
+while (fwdBtn() && !fwdBtn().disabled && f < 10) { click(fwdBtn()); await wait(30); f++; }
+must(f === 4, `и вперёд обратно до карты (прошли ${f})`);
+must(q(".sheet"), "вернулись на собранную карту");
+must(apiCalls === callsBefore, "за всё листание агент не вызывался ни разу");
+
 click(q("#restart")); await wait(40);
 q("#sit").value = "Держим двух поставщиков ради надёжности, но объём размывается и оба дают нам худшую цену.";
 click(q("#start")); await wait(140);
@@ -225,7 +251,14 @@ must(raw().length === before, "отложенный разбор остался 
 must(q(".card.hl") && q("#view-diag").innerHTML.includes("Разбор отложен"), "показано уведомление о сохранении");
 must(q("[data-open-hist]"), "из уведомления можно открыть запись в истории");
 click(q("[data-open-hist]")); await wait(60);
-must(!q("#view-diag").hidden && q("#refine"), "запись открылась на том шаге, где остановились");
+must(!q("#view-diag").hidden && q("#view-diag").innerHTML.includes("Уточняющие вопросы"),
+  "запись открылась на том шаге, где остановились");
+must(q("[data-browse]"), "запись из истории открывается в режиме просмотра — с листанием");
+must(!q("#refine"), "в просмотре кнопки, запускающей агента, нет");
+must(!q("#park"), "в просмотре нет и «отложить» — запись уже сохранена");
+must(q("#resume"), "из просмотра можно продолжить незавершённый разбор");
+click(q("#resume")); await wait(60);
+must(q("#refine") && q("#park"), "после «продолжить» вернулись обычные действия шага");
 click(q("#park")); await wait(60);
 click(document.querySelector('#nav [data-view="history"]')); await wait(60);
 must(q("#view-history").innerHTML.includes("не завершён"), "незавершённые помечены в списке");

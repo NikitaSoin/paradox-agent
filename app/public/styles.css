@@ -467,3 +467,12 @@ details.case .body{margin-top:9px; font-size:.86rem; color:var(--ink-2)}
   .book-toc button{padding:13px 2px}
   .tile{padding:13px 14px}
 }
+
+/* Пример заполнения на первом шаге — виден постоянно, а не только пока поле пустое. */
+.example{background:var(--sunk); border-style:dashed}
+.example p{font-size:.9rem; color:var(--ink-2)}
+
+/* Режим просмотра записи из истории: листание вместо действий шага. */
+.acts.browse{border-top:1px solid var(--line); padding-top:16px}
+.acts.browse .note{margin-left:auto}
+@media (max-width:480px){.acts.browse .note{margin-left:0; width:100%; text-align:center}}

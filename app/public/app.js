@@ -124,8 +124,37 @@ function histOpen(id) {
     positions: e.positions || (e.position != null ? [e.position] : (e.refine?.axes || []).map(a => a.position?.value ?? 50)),
     approachId: e.approachId, firstStep: e.firstStep || "",
     step, error: null, busy: false, decideRequested: Boolean(e.decide),
+    // Открытая из истории запись — режим просмотра: листаем уже посчитанные шаги
+    // вперёд и назад, агента не трогаем. Продолжить разбор можно кнопкой.
+    browse: true,
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
+}
+
+/** Шаги, по которым в этом разборе есть данные — их и можно листать. */
+function browsableSteps() {
+  const out = ["input"];
+  if (S.read) out.push("questions");
+  if (S.refine) out.push("readings");
+  if (S.refine && S.chosenType === "paradox") out.push("axis");
+  if (S.decide) out.push("decide");
+  if (S.decide && S.chosenType) out.push("sheet");
+  return out;
+}
+
+/** Панель листания вместо обычных кнопок шага, когда смотрим запись из истории. */
+function browseNav() {
+  const steps = browsableSteps();
+  const i = steps.indexOf(S.step);
+  const prev = i > 0 ? steps[i - 1] : null;
+  const next = i >= 0 && i < steps.length - 1 ? steps[i + 1] : null;
+  const done = S.step === "sheet" || Boolean(S.decide);
+  return `<div class="acts browse">
+    <button class="go" data-browse="${next || ""}" ${next ? "" : "disabled"}>Вперёд${next ? "" : " — это последний шаг"}</button>
+    <button class="back" data-browse="${prev || ""}" ${prev ? "" : "disabled"}>Назад</button>
+    <span class="note">Просмотр записи · шаг ${Math.max(i, 0) + 1} из ${steps.length}</span>
+    ${done ? "" : `<button class="back" id="resume">Продолжить разбор с этого места</button>`}
+  </div>`;
 }
 
 const PROV_KEY = "paradox.provider";
@@ -133,7 +162,7 @@ const PROV_KEY = "paradox.provider";
 const S = {
   live: false, provider: null, providers: [], step: "input", situation: "", runId: null,
   read: null, answers: {}, free: {}, extra: "", refine: null,
-  chosenType: null, axisIndex: 0, positions: [], decideRequested: false,
+  chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
   decide: null, approachId: null, firstStep: "", error: null, busy: false, savedNote: null,
 };
 
@@ -189,12 +218,14 @@ async function run(step, ctx) {
 /** Сохраняет текущий разбор в историю и очищает состояние под новый. */
 function parkAndReset() {
   const had = Boolean(S.read);
-  if (had) histUpsert(S.step);
-  const note = had ? { id: S.runId, title: S.read.restated, done: S.step === "sheet" } : null;
+  // В просмотре записи ничего не пересохраняем: иначе шаг, на котором мы
+  // остановились при листании, затрёт настоящий шаг завершения разбора.
+  if (had && !S.browse) histUpsert(S.step);
+  const note = had && !S.browse ? { id: S.runId, title: S.read.restated, done: S.step === "sheet" } : null;
   Object.assign(S, {
     step: "input", situation: "", runId: null, read: null, answers: {}, free: {}, extra: "",
     refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
-    approachId: null, firstStep: "", error: null, busy: false, savedNote: note,
+    approachId: null, firstStep: "", error: null, busy: false, savedNote: note, browse: false,
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
 }
@@ -236,7 +267,18 @@ function viewInput() {
     </div>
   </div>` : ""}
   <div class="stack" style="margin-top:20px">
-    <textarea id="sit" rows="5" placeholder="Например: совет требует сократить расходы на 20%, но единственный источник роста у нас — новые продукты, и режем мы в первую очередь их.">${esc(S.situation)}</textarea>
+    <textarea id="sit" rows="6" placeholder="Что тянет вас в две стороны, между чем и чем, и почему это встало именно сейчас">${esc(S.situation)}</textarea>
+    <div class="card flat example">
+      <div class="k">Пример — так это выглядит в готовом виде</div>
+      <p>Руководители регионов просят свободы в закупках и ассортименте: они лучше знают местный
+      спрос, и там, где мы её давали, продажи росли. Но пока закупки идут через центр, мы приходим
+      к поставщику одним большим заказом и получаем цену ниже — а если каждый регион закупает сам,
+      этот рычаг пропадает, и держать единый стандарт качества тоже становится нечем. Встало
+      сейчас, потому что за год открыли восемь точек — согласовывать каждую позицию вручную мы
+      уже не успеваем.</p>
+      <p class="note" style="margin-top:9px">Здесь видно всё, что нужно инструменту: две стороны,
+      каждая по-своему права; чем платим за каждую; и почему вопрос обострился именно сейчас.</p>
+    </div>
     ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
     <div class="acts" style="margin-top:0">
       <button class="go" id="start">Разобрать ситуацию</button>
@@ -295,11 +337,11 @@ function viewQuestions() {
     const free = S.free[qq.id] || "";
     const opts = (qq.options || []).map(o =>
       `<button class="pick" data-q="${esc(qq.id)}" data-v="${esc(o.label)}"
-         aria-pressed="${!free && sel === o.label}"><b>${esc(o.label)}</b></button>`).join("");
+         aria-pressed="${sel === o.label}"><b>${esc(o.label)}</b></button>`).join("");
     return `<div class="card"><div class="k">Вопрос ${i + 1}</div>
       <h4 style="margin-bottom:12px">${esc(qq.text)}</h4>
       ${opts ? `<div class="stack-s">${opts}</div>` : ""}
-      <label class="f own"><b>${opts ? "Или впишите свой ответ" : "Ваш ответ"}</b>
+      <label class="f own"><b>${opts ? "Уточните своими словами — если нужно" : "Ваш ответ"}</b>
         <input type="text" data-free="${esc(qq.id)}" value="${esc(free)}"
                placeholder="Своими словами — точнее, чем вариант из списка"></label>
       <p class="note" style="margin-top:10px">Проверяет: ${esc(qq.tests)}</p></div>`;
@@ -790,6 +832,7 @@ async function goTheory(anchor) {
 
 /** Запускает разбор направлений решений сразу по приходу на шаг оси, не дожидаясь клика «Далее». */
 function maybeAutoDecide() {
+  if (S.browse) return; // просмотр записи из истории — агента не запускаем
   if (S.step !== "axis" || S.chosenType !== "paradox" || S.decide || S.decideRequested || S.busy) return;
   S.decideRequested = true;
   (async () => {
@@ -818,7 +861,24 @@ function render() {
     S.step === "axis" ? viewAxis() :
     S.step === "decide" ? (S.chosenType === "paradox" ? viewDecideParadox() : viewDecideSimple()) :
     S.step === "sheet" ? viewSheet() : "";
-  const sit = $("#sit"); if (sit) sit.focus();
+  if (S.browse) applyBrowseMode(d);
+  const sit = $("#sit"); if (!S.browse && sit) sit.focus();
+}
+
+/** Превращает экран шага в режим просмотра: листание вместо действий,
+ *  ничего не запускающего агента. */
+function applyBrowseMode(root) {
+  // Главная панель кнопок шага — прямой ребёнок экрана; вложенные .acts
+  // (например, «выбрать подход» внутри карточки) не трогаем, но обезвреживаем ниже.
+  const main = root.querySelector(":scope > .acts") ||
+    root.querySelector(".stack > .acts");
+  if (main) main.outerHTML = browseNav();
+  else root.insertAdjacentHTML("beforeend", browseNav());
+
+  // Всё, что дёргает модель или меняет ход разбора, в просмотре недоступно.
+  root.querySelectorAll("#start, #refine, #toDecideParadox, #tosheet, [data-name], [data-appr], [data-focus], [data-axis], .beam, textarea, input[type=text]")
+    .forEach(el => { el.disabled = true; });
+  root.querySelectorAll(".plane-grid").forEach(el => { el.style.pointerEvents = "none"; });
 }
 
 /* ------------------------------- события ------------------------------- */
@@ -890,6 +950,17 @@ document.addEventListener("click", async (e) => {
     parkAndReset(); return;
   }
 
+  const br = e.target.closest("[data-browse]");
+  if (br) {
+    const to = br.dataset.browse;
+    if (to) { S.step = to; render(); window.scrollTo({ top: 0 }); }
+    return;
+  }
+
+  if (e.target.closest("#resume")) {
+    S.browse = false; render(); window.scrollTo({ top: 0 }); return;
+  }
+
   const goto = e.target.closest("[data-goto]");
   if (goto) { S.step = goto.dataset.goto; S.error = null; render(); return; }
 
@@ -915,10 +986,17 @@ document.addEventListener("click", async (e) => {
 
   if (e.target.closest("#refine")) {
     const ex = $("#extra"); if (ex) S.extra = ex.value.trim();
-    const answers = S.read.questions.map(qq => ({
-      question: qq.text,
-      answer: (S.free[qq.id] || "").trim() || S.answers[qq.id] || "",
-    }));
+    // Выбранный вариант и дописанное пояснение — не «или», а «и»: человек
+    // выбирает ближайшее по смыслу и уточняет своими словами. Раньше пояснение
+    // затирало вариант, и до модели доходила только половина ответа.
+    const answers = S.read.questions.map(qq => {
+      const picked = S.answers[qq.id] || "";
+      const own = (S.free[qq.id] || "").trim();
+      return {
+        question: qq.text,
+        answer: picked && own ? `${picked} — уточнение: ${own}` : (own || picked),
+      };
+    });
     const data = await run("refine", { situation: S.situation, read: S.read, answers, extra: S.extra });
     if (data) {
       S.refine = data; S.axisIndex = 0; S.decide = null; S.decideRequested = false;
@@ -980,12 +1058,6 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.dataset?.free !== undefined) {
     S.free[e.target.dataset.free] = e.target.value;
-    const card = e.target.closest(".card");
-    const has = e.target.value.trim().length > 0;
-    card?.querySelectorAll("[data-q]").forEach(b => {
-      if (has) b.setAttribute("aria-pressed", "false");
-      else if (S.answers[e.target.dataset.free] === b.dataset.v) b.setAttribute("aria-pressed", "true");
-    });
     const btn = $("#refine");
     if (btn && S.read) {
       const n = S.read.questions.filter(q => (S.free[q.id] || "").trim() || S.answers[q.id]).length;
