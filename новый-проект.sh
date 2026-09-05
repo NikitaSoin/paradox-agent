@@ -19,6 +19,14 @@ fi
 DIR="$BASE/$NAME"
 [ -e "$DIR" ] && { echo "Папка $DIR уже существует — остановился, ничего не трогаю."; exit 1; }
 
+# 🔴 GitHub выкидывает из имени репозитория всё нелатинское: «мой-проект» станет
+# «-----». Поэтому имя проекта — только латиница, цифры, дефис.
+if printf '%s' "$NAME" | grep -qvE '^[A-Za-z0-9._-]+$'; then
+  echo "Имя «${NAME}» не годится для GitHub: нужны латиница, цифры, дефис."
+  echo "Например: paradox-agent, sales-bot, crm-2026"
+  exit 1
+fi
+
 echo "→ Папка $DIR"
 mkdir -p "$DIR/app/public"
 
@@ -124,14 +132,41 @@ fi
 echo "   проверка пройдена: .env в коммит не попал"
 
 echo "→ Репозиторий на GitHub (приватный)"
-if gh auth status >/dev/null 2>&1; then
-  gh repo create "$NAME" --private --source=. --remote=origin --push \
-    ${DESC:+--description "$DESC"}
-  echo
-  echo "Готово. Репозиторий: $(gh repo view --json url -q .url)"
+# Никакой отдельной авторизации: берём доступ, уже сохранённый в связке ключей
+# macOS (тот же, которым работает git push). Права `repo` включают создание.
+CRED=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/dev/null)
+GH_USER=$(printf '%s' "$CRED" | sed -n 's/^username=//p')
+GH_TOKEN=$(printf '%s' "$CRED" | sed -n 's/^password=//p')
+
+if [ -z "$GH_TOKEN" ]; then
+  echo "   🔴 Сохранённого доступа к github.com не нашлось."
+  echo "   Создайте репозиторий вручную на github.com (New → Private), затем:"
+  echo "     cd $DIR && git remote add origin https://github.com/ЛОГИН/$NAME.git && git push -u origin main"
 else
-  echo "   gh не авторизован. Выполните:  gh auth login"
-  echo "   затем:  cd $DIR && gh repo create $NAME --private --source=. --remote=origin --push"
+  BODY=$(printf '{"name":"%s","private":true,"description":"%s"}' "$NAME" "${DESC//\"/\\\"}")
+  CODE=$(curl -s -o /tmp/newproj.json -w "%{http_code}" -X POST \
+    -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+    https://api.github.com/user/repos -d "$BODY")
+  case "$CODE" in
+    201)
+      # 🔴 Имя репозитория берём из ответа, а не из своей переменной: GitHub
+      # выкидывает из имени всё нелатинское, и «моя-папка» превращается в «-----».
+      REAL=$(sed -n 's/.*"clone_url": *"\([^"]*\)".*/\1/p' /tmp/newproj.json | head -1)
+      [ -z "$REAL" ] && REAL="https://github.com/$GH_USER/$NAME.git"
+      git remote add origin "$REAL"
+      git push -qu origin main
+      echo "   создан и запушен: ${REAL%.git}"
+      [ "${REAL%.git}" != "https://github.com/$GH_USER/$NAME" ] &&
+        echo "   ⚠️  GitHub изменил имя: в адресе латиница. Локальная папка осталась «${NAME}»."
+      ;;
+    422)
+      echo "   🔴 Репозиторий с именем «${NAME}» уже есть у $GH_USER. Выберите другое имя."
+      ;;
+    *)
+      echo "   🔴 GitHub ответил $CODE:"; head -c 300 /tmp/newproj.json; echo
+      ;;
+  esac
+  rm -f /tmp/newproj.json
 fi
 
 echo
