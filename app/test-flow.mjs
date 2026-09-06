@@ -144,8 +144,16 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     must(!q(".appr .caseb"), "кейсы убраны из карточек подходов на шаге решений");
     must(!q("#view-diag").innerHTML.includes("Первый шаг"), "«первый шаг» убран из карточек подходов");
     must(!q("#first"), "поле «ваш первый шаг» убрано из шага решений");
+    must(document.querySelectorAll('.appr .pick[aria-pressed="true"]').length === 1, "рекомендованный подход выбран заранее");
     click(document.querySelector('[data-appr="space"]'));
     await wait(40);
+    must(document.querySelectorAll('.appr .pick[aria-pressed="true"]').length === 2, "второй подход добавился к первому, а не заменил его");
+    click(document.querySelector('[data-appr="space"]'));
+    await wait(40);
+    must(document.querySelectorAll('.appr .pick[aria-pressed="true"]').length === 1, "повторное нажатие снимает выбор");
+    click(document.querySelector('[data-appr="space"]'));
+    await wait(40);
+    must(q("#tosheet").textContent.includes("2 подхода"), "кнопка сборки показывает число выбранных подходов");
   }
   click(q("#tosheet"));
   await wait(60);
@@ -168,6 +176,8 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     must(q(".sheet-h h2 .i"), "подсказка «i» есть и у типа вызова в заголовке собранной карты");
     must(document.querySelectorAll(".sheet .pole .i").length >= 2, "подсказки «i» есть у полюсов и в собранной карте");
     must(!q(".sheet").innerHTML.includes("Первый шаг"), "«первый шаг» убран и из собранной карты");
+    must(q(".sheet").innerHTML.includes("Выбранный подход 1 из 2") && q(".sheet").innerHTML.includes("Выбранный подход 2 из 2"), "в карте оба выбранных подхода");
+    must(raw()[0].approachIds.length === 2, "в истории сохраняются оба подхода");
   }
   click(q('[data-goto="decide"]'));
   await wait(40);

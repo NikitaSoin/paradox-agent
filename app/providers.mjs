@@ -44,11 +44,21 @@ function deepseekProvider() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) return null;
   const base = trim(process.env.DEEPSEEK_BASE_URL) || "https://api.deepseek.com";
-  // v4-flash почти вдвое быстрее v4-pro на нашей схеме (замер: ~150s против ~260-370s
-  // на полный трёхшаговый разбор) при сопоставимом качестве — берём его по умолчанию.
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+  // Замер 06.09.2026 на шаге «первичное чтение» (один прогон, разброс большой):
+  // flash/high 40s, pro/low 64s, pro/high 84s; на «уточнении» pro/low 41s, flash/high 49s,
+  // pro/high 53s. Время задаёт число сгенерированных токенов (~80–100 в секунду у обеих),
+  // а не модель как таковая. Берём pro как более точную, а скорость возвращаем глубиной
+  // рассуждений: обычным шагам — low. DEEPSEEK_MODEL= и DEEPSEEK_EFFORT= перебивают.
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-pro";
 
-  async function once({ system, user, schema, maxTokens, onThinking }) {
+  // Глубина рассуждений. DeepSeek принимает low/high/max; без параметра думает на high,
+  // и раньше мы так и жили — параметр не передавался. Думающий режим включён явно,
+  // чтобы не зависеть от умолчаний API. «medium» шага отдаём как low: по замеру это
+  // экономит до трети времени шага, а формат и полнота ответа не страдают.
+  const dsEffort = (e) => process.env.DEEPSEEK_EFFORT ||
+    ({ low: "low", medium: "low", high: "high", max: "max" }[e] || "high");
+
+  async function once({ system, user, schema, maxTokens, effort, onThinking }) {
     const sys = system.map(b => b.text).join("\n\n") +
       "\n\n## ФОРМАТ ОТВЕТА\nВерни ОДИН объект JSON строго по этой схеме и ничего кроме него — " +
       "без пояснений, без markdown-ограждений. Заполни все обязательные поля; " +
@@ -61,6 +71,8 @@ function deepseekProvider() {
       signal: AbortSignal.timeout(600000),
       body: JSON.stringify({
         model, max_tokens: maxTokens, stream: true,
+        thinking: { type: "enabled" },
+        reasoning_effort: dsEffort(effort),
         response_format: { type: "json_object" },
         messages: [{ role: "system", content: sys }, { role: "user", content: user }],
       }),

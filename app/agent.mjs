@@ -353,13 +353,16 @@ export async function runStep(step, ctx, onThinking = () => {}, providerId = nul
   const p = (providerId && getProvider(providerId)) || provider;
   if (!p) throw new Error("NO_KEY");
 
+  const effort = EFFORT || cfg.effort;
+  const info = { id: p.id, label: p.label, model: p.model };
+
   const { json, usage } = await p.run({
     system: SYSTEM,
     user: userTurn(step, ctx, cfg.instructions),
     schema: cfg.schema,
     maxTokens: cfg.max,
-    effort: EFFORT || cfg.effort,
+    effort,
     onThinking,
   });
-  return { data: json, usage, provider: { id: p.id, label: p.label, model: p.model } };
+  return { data: json, usage, provider: info };
 }

@@ -104,7 +104,7 @@ function histUpsert(stage) {
     axisIndex: S.axisIndex, positions: S.positions,
     axisName: S.refine?.axes?.length
       ? S.refine.axes.map(a => `${a.a} — ${a.b}`).join(" · ") : null,
-    approachId: S.approachId, firstStep: S.firstStep,
+    approachIds: S.approachIds, firstStep: S.firstStep,
     answers: S.answers, free: S.free, extra: S.extra,
     read: S.read, refine: S.refine, decide: S.decide,
   };
@@ -122,7 +122,8 @@ function histOpen(id) {
     runId: e.id, situation: e.situation, read: e.read, refine: e.refine, decide: e.decide,
     answers: e.answers || {}, free: e.free || {}, extra: e.extra || "", chosenType: e.chosenType, axisIndex: e.axisIndex ?? 0,
     positions: e.positions || (e.position != null ? [e.position] : (e.refine?.axes || []).map(a => a.position?.value ?? 50)),
-    approachId: e.approachId, firstStep: e.firstStep || "",
+    // Старые записи хранили один подход в approachId — поднимаем его в список.
+    approachIds: e.approachIds || (e.approachId ? [e.approachId] : []), firstStep: e.firstStep || "",
     step, error: null, busy: false, decideRequested: Boolean(e.decide),
     // Открытая из истории запись — режим просмотра: листаем уже посчитанные шаги
     // вперёд и назад, агента не трогаем. Продолжить разбор можно кнопкой.
@@ -163,7 +164,7 @@ const S = {
   live: false, provider: null, providers: [], step: "input", situation: "", runId: null,
   read: null, answers: {}, free: {}, extra: "", refine: null,
   chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
-  decide: null, approachId: null, firstStep: "", error: null, busy: false, savedNote: null,
+  decide: null, approachIds: [], firstStep: "", error: null, busy: false, savedNote: null,
 };
 
 /* ------------------------------- транспорт ------------------------------- */
@@ -225,7 +226,7 @@ function parkAndReset() {
   Object.assign(S, {
     step: "input", situation: "", runId: null, read: null, answers: {}, free: {}, extra: "",
     refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
-    approachId: null, firstStep: "", error: null, busy: false, savedNote: note, browse: false,
+    approachIds: [], firstStep: "", error: null, busy: false, savedNote: note, browse: false,
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
 }
@@ -276,8 +277,6 @@ function viewInput() {
       этот рычаг пропадает, и держать единый стандарт качества тоже становится нечем. Встало
       сейчас, потому что за год открыли восемь точек — согласовывать каждую позицию вручную мы
       уже не успеваем.</p>
-      <p class="note" style="margin-top:9px">Здесь видно всё, что нужно инструменту: две стороны,
-      каждая по-своему права; чем платим за каждую; и почему вопрос обострился именно сейчас.</p>
     </div>
     ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
     <div class="acts" style="margin-top:0">
@@ -530,7 +529,8 @@ function viewDecideParadox() {
   <div class="eyebrow">Шаг 5 из 6 · Области и направления принятия решений</div>
   <h1 style="margin-top:10px">Четыре подхода к вашей оси</h1>
   <p class="lede">Готового решения здесь нет и не будет: инструмент даёт примеры и вопросы,
-  решение принимаете вы. Выберите подход, к которому готовы сделать первый шаг.</p>
+  решение принимаете вы. Отметьте подходы, к которым готовы сделать первый шаг — можно
+  один, можно несколько: они попадут в итоговую карту.</p>
   <div class="stack" style="margin-top:22px">
     ${d.approaches.map(a => `<div class="appr ${a.id === d.recommended ? "rec" : ""}" >
       <div class="appr-h">
@@ -544,13 +544,13 @@ function viewDecideParadox() {
         <div class="k">Почему я рекомендую именно это</div>
         <p style="font-size:.9rem">${esc(d.recommended_why)}</p></div>` : ""}
       <div class="acts" style="margin-top:14px">
-        <button class="pick" data-appr="${esc(a.id)}" aria-pressed="${S.approachId === a.id}"
-                style="width:auto;padding:8px 16px"><b>Выбрать этот подход</b></button>
+        <button class="pick" data-appr="${esc(a.id)}" aria-pressed="${S.approachIds.includes(a.id)}"
+                style="width:auto;padding:8px 16px"><b>${S.approachIds.includes(a.id) ? "✓ Выбран — нажмите, чтобы снять" : "Выбрать этот подход"}</b></button>
       </div>
     </div>`).join("")}
   </div>
   <div class="acts">
-    <button class="go" id="tosheet" ${S.approachId ? "" : "disabled"}>Собрать карту</button>
+    <button class="go" id="tosheet" ${S.approachIds.length ? "" : "disabled"}>${S.approachIds.length > 1 ? `Собрать карту (${S.approachIds.length} подхода)` : "Собрать карту"}</button>
     <button class="back" data-goto="axis">Назад к оси</button>
     ${parkButton()}
   </div>`;
@@ -615,16 +615,18 @@ function viewSheet() {
           ${planeCard(axes[0], axes[2], 0, 2, S.positions[0], S.positions[2], axes[0].optimum.target, axes[2].optimum.target)}
           ${planeCard(axes[1], axes[2], 1, 2, S.positions[1], S.positions[2], axes[1].optimum.target, axes[2].optimum.target)}
         </div>`;
-    const a = d.approaches.find(x => x.id === S.approachId) || d.approaches[0];
+    // Подходы в порядке базы знаний, а не в порядке нажатий; если ничего не выбрано — первый.
+    const chosen = d.approaches.filter(x => S.approachIds.includes(x.id));
+    const picked = chosen.length ? chosen : [d.approaches[0]];
     body = `
       <div class="sect"><div class="k">${term("полюс", "Полюса")}</div>
         ${axes.map((axx, i) => (multi
           ? `<div class="axgroup"><div class="eyebrow">Парадокс ${i + 1} · ${esc(axx.a)} — ${esc(axx.b)}</div>${polesCard(axx)}</div>`
           : polesCard(axx))).join("")}</div>
       <div class="sect"><div class="k">Где мы сейчас${multi ? " · ⊙ — куда двигаться" : ""}</div>${whereNow}</div>
-      <div class="sect"><div class="k">Выбранный подход · ${esc(APPR_NAME[a.id])}</div>
+      ${picked.map((a, i) => `<div class="sect"><div class="k">${picked.length > 1 ? `Выбранный подход ${i + 1} из ${picked.length}` : "Выбранный подход"} · ${esc(APPR_NAME[a.id])}</div>
         <p style="font-size:.92rem;color:var(--ink-2)">${esc(a.why)}</p>
-        <ul class="qs">${a.questions.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>
+        <ul class="qs">${a.questions.map(q => `<li>${esc(q)}</li>`).join("")}</ul></div>`).join("")}
       ${multi ? `<div class="stack-s noprint" style="margin:2px 0 -8px">
         ${axes.map((axx, i) => `<div>
           <div class="eyebrow" style="margin:0 0 4px">Парадокс ${i + 1}</div>
@@ -839,7 +841,7 @@ function maybeAutoDecide() {
     const ctx = { situation: S.situation, read: S.read, refine: S.refine,
       chosenType: "paradox", chosenAxes: chosenAxesCtx() };
     const data = await run("decide_paradox", ctx);
-    if (data) { S.decide = data; S.approachId = data.recommended || null; }
+    if (data) { S.decide = data; S.approachIds = data.recommended ? [data.recommended] : []; }
     else { S.decideRequested = false; }
     render();
   })();
@@ -1028,7 +1030,7 @@ document.addEventListener("click", async (e) => {
       chosenType: S.chosenType, chosenAxes: chosenAxesCtx() };
     const data = await run(step, ctx);
     if (data) {
-      S.decide = data; S.approachId = data.recommended || null; S.step = "decide";
+      S.decide = data; S.approachIds = data.recommended ? [data.recommended] : []; S.step = "decide";
       histUpsert("decide"); render(); window.scrollTo({ top: 0 });
     }
     return;
@@ -1041,7 +1043,12 @@ document.addEventListener("click", async (e) => {
   }
 
   const ap = e.target.closest("[data-appr]");
-  if (ap) { S.approachId = ap.dataset.appr; render(); return; }
+  if (ap) {
+    // Переключатель: повторное нажатие снимает выбор. Выбрать можно несколько.
+    const id = ap.dataset.appr;
+    S.approachIds = S.approachIds.includes(id) ? S.approachIds.filter(x => x !== id) : [...S.approachIds, id];
+    render(); return;
+  }
 
   if (e.target.closest("#tosheet")) {
     const f = $("#first"); if (f) S.firstStep = f.value.trim();
