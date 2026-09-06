@@ -200,7 +200,7 @@ process.on("uncaughtException", (e) => console.error("[uncaught]", e?.message ||
 process.on("unhandledRejection", (e) => console.error("[unhandled]", e?.message || e));
 
 server.listen(PORT, () => {
-  console.log(`\n  Карта натяжения — http://localhost:${PORT}`);
+  console.log(`\n  Теория парадоксов — http://localhost:${PORT}`);
   if (hasKey) {
     console.log(`  Режим: живой агент — ${providerInfo.label} · ${providerInfo.model}` +
       (providerInfo.proxied ? " (через свой шлюз)" : ""));
