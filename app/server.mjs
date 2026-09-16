@@ -64,8 +64,12 @@ async function readBody(req) {
 // Если задан ACCESS_CODE, сайт закрыт кодом. Обязателен при публикации наружу:
 // иначе ключ провайдера тратит любой, кому попала ссылка.
 const ACCESS_CODE = process.env.ACCESS_CODE || "";
-const SHEETS_URL = process.env.SHEETS_URL || "";
-const SHEETS_SECRET = process.env.SHEETS_SECRET || "";
+// Таблица прописана прямо в коде, чтобы на хостинге не заводить переменные.
+// Переменные окружения, если заданы, перебивают. Ключ DeepSeek так не храним:
+// репозиторий публичный, а ключ — это деньги.
+const SHEETS_URL = process.env.SHEETS_URL ??
+  "https://script.google.com/macros/s/AKfycbw6bVb02lg0fncKOuyEpXkHEDFn_yasKodQkN96pRu5o-EdANwuFSYIPefPymE7P2Sdeg/exec";
+const SHEETS_SECRET = process.env.SHEETS_SECRET ?? "Snm081105";
 const COOKIE = "pa_access";
 
 function sameCode(v) {
