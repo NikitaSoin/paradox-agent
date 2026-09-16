@@ -172,12 +172,13 @@ for (const type of ["paradox", "problem", "dilemma"]) {
   await wait(60);
   must(q(".sheet"), "карта собрана");
   must(!q(".sheet").innerHTML.includes("undefined"), "в карте нет undefined");
-  must(!q(".sheet").innerHTML.includes("Ситуация</div>"), "верхний блок «Ситуация» убран из карты");
+  must(q(".sheet .sheet-intro") && q(".sheet .sheet-intro").textContent.includes(raw()[0].restated), "карта начинается с ситуации из шага 2");
+  must(/\d+%/.test(q(".sheet .sheet-score")?.textContent || ""), "в начале карты — процент из шага 3");
   if (type === "paradox") {
     must(!q(".sheet .plan"), "плана нет и в собранной карте");
     must(!q(".sheet").innerHTML.includes("Ритм и держатель"), "ритма и держателя нет в карте");
     must(!q(".sheet").innerHTML.includes("Ранний сигнал перекоса"), "сигнала перекоса нет в карте");
-    must(q(".sheet").innerHTML.includes("Полюса"), "карта начинается сразу с полюсов");
+    must(q(".sheet").innerHTML.includes("Полюса"), "в карте есть полюса");
     must(q(".sheet .plane-grid"), "координатная плоскость собрана и в финальной карте, не только на шаге 4");
     must(document.querySelectorAll(".sheet .plane-target").length >= 1, "на плоскости в карте отмечен оптимум");
     must(q(".sheet .plane-traj"), "от текущего положения к оптимуму проведена траектория");

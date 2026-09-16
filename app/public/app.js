@@ -738,6 +738,7 @@ function viewSheet() {
         <p class="note">${GLYPH(t)}способ: ${VERB[t]}</p></div>
       <span class="note" style="font-family:var(--mono);font-size:.7rem">${date}</span>
     </div>
+    ${sheetIntro()}
     ${body}
   </div>
   ${S.browse ? "" : contactCard()}
@@ -745,6 +746,22 @@ function viewSheet() {
     <button class="go" onclick="window.print()">Распечатать</button>
     <button class="back" data-goto="decide">Назад</button>
     ${parkButton()}
+  </div>`;
+}
+
+/** Начало итоговой карты: ситуация, как её понял агент на шаге 2, и оценка из шага 3. */
+function sheetIntro() {
+  const h = S.refine?.hypothesis;
+  const pct = h ? Math.round((h.confidence || 0) * 100) : null;
+  // Модель оценивает уверенность в своей гипотезе. Если гипотеза — парадокс, это и есть
+  // «насколько это парадокс»; иначе честно показываем, к чему она склонялась.
+  const score = !h ? "" : h.type === "paradox"
+    ? `<div class="sheet-score"><b>${pct}%</b><span>парадоксальность по оценке на шаге 3</span></div>`
+    : `<div class="sheet-score"><b>${pct}%</b><span>на шаге 3 это больше походило на ${esc(RU[h.type])}, чем на парадокс</span></div>`;
+  return `<div class="sect sheet-intro">
+    <div class="k">Ситуация, как я её понял</div>
+    <p>${esc(S.read?.restated || "")}</p>
+    ${score}
   </div>`;
 }
 

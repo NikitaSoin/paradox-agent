@@ -329,6 +329,9 @@ table.lib td.src{color:var(--ink-3); font-size:.78rem}
 .sheet{background:var(--surface); border:1px solid var(--line-strong); border-radius:3px; padding:26px}
 .sheet-h{display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin-bottom:6px}
 .sheet .sect{margin-top:20px; padding-top:16px; border-top:1px solid var(--line)}
+.sheet-score{display:flex; align-items:baseline; gap:10px; margin-top:12px; flex-wrap:wrap}
+.sheet-score b{font-family:var(--serif); font-size:1.7rem; line-height:1; font-variant-numeric:tabular-nums}
+.sheet-score span{font-size:.88rem; color:var(--ink-2)}
 @media print{
   .rail,.acts,.think,.noprint,.steps,.gate{display:none!important}
   .shell{grid-template-columns:1fr} main{padding:0} body{background:#fff;color:#000}
