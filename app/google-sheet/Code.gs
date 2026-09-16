@@ -63,8 +63,8 @@ function doPost(e) {
   if (!data.record || !data.record.id) return reply({ ok: false, error: "no id" });
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
   try {
+    lock.waitLock(20000);
     const sheet = ensureSheet();
     const rec = data.record;
     const found = sheet.getRange("A:A").createTextFinder(String(rec.id)).matchEntireCell(true).findNext();
@@ -83,6 +83,9 @@ function doPost(e) {
     });
     range.setValues([row]);
     return reply({ ok: true, row: rowIdx });
+  } catch (err) {
+    // Без этого Google отдаёт вместо ответа HTML-страницу, и причину не видно.
+    return reply({ ok: false, error: String(err && err.message || err) });
   } finally {
     lock.releaseLock();
   }
@@ -94,6 +97,7 @@ function doGet() {
 
 function ensureSheet() {
   const ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Таблица не найдена: скрипт создан не из меню таблицы — заполните SPREADSHEET_ID");
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
   const head = sheet.getRange(1, 1, 1, COLUMNS.length);
   const titles = COLUMNS.map(c => c[1]);
