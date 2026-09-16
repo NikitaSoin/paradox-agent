@@ -64,6 +64,8 @@ async function readBody(req) {
 // Если задан ACCESS_CODE, сайт закрыт кодом. Обязателен при публикации наружу:
 // иначе ключ провайдера тратит любой, кому попала ссылка.
 const ACCESS_CODE = process.env.ACCESS_CODE || "";
+const SHEETS_URL = process.env.SHEETS_URL || "";
+const SHEETS_SECRET = process.env.SHEETS_SECRET || "";
 const COOKIE = "pa_access";
 
 function sameCode(v) {
@@ -140,6 +142,35 @@ const server = createServer(async (req, res) => {
     return res.end(JSON.stringify({ live: hasKey, ...providerInfo }));
   }
 
+  // Запись разбора в Google-таблицу. Адрес скрипта и пароль живут только на сервере,
+  // поэтому браузер шлёт сюда, а не в Google напрямую. Не задан SHEETS_URL — тихо ничего не делаем.
+  if (url.pathname === "/api/record" && req.method === "POST") {
+    let body;
+    try { body = await readBody(req); }
+    catch { res.writeHead(400); return res.end("bad json"); }
+    const record = body?.record;
+    if (!record?.id || JSON.stringify(record).length > 300000) { res.writeHead(400); return res.end("bad record"); }
+    if (!SHEETS_URL) { res.writeHead(204); return res.end(); }
+    try {
+      const r = await fetch(SHEETS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: SHEETS_SECRET, record }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = await r.text();
+      let ok = r.ok;
+      try { ok = ok && JSON.parse(text).ok === true; } catch { ok = false; }
+      if (!ok) console.error(`[sheets] запись не прошла: ${r.status} ${text.slice(0, 200)}`);
+      res.writeHead(ok ? 200 : 502, { "Content-Type": MIME[".json"] });
+      return res.end(JSON.stringify({ ok }));
+    } catch (e) {
+      console.error("[sheets] нет связи:", e?.message || e);
+      res.writeHead(502, { "Content-Type": MIME[".json"] });
+      return res.end(JSON.stringify({ ok: false }));
+    }
+  }
+
   if (url.pathname === "/api/theory") {
     res.writeHead(200, { "Content-Type": MIME[".json"] });
     return res.end(JSON.stringify(THEORY));
@@ -205,6 +236,7 @@ server.listen(PORT, () => {
   } else {
     console.log("  Режим: ДЕМО (ключа DeepSeek нет — сценарий проигрывается без модели)");
   }
+  console.log(SHEETS_URL ? "  Ответы: пишутся в Google-таблицу" : "  Ответы: в таблицу не пишутся (SHEETS_URL не задан)");
   console.log(ACCESS_CODE
     ? `  Доступ: по коду. Ссылка для участника — <адрес>/?code=${ACCESS_CODE}\n`
     : "  🔴 Доступ ОТКРЫТ ВСЕМ. Публикуете наружу — задайте ACCESS_CODE, иначе ключ тратит любой прохожий\n");

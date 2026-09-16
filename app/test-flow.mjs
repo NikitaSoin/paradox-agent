@@ -15,10 +15,11 @@ window.confirm = () => true;
 window.print = () => {};
 
 // Заглушка сети: /api/config, /api/theory и SSE-поток /api/step из демо-данных.
-let apiCalls = 0, lastCtx = null; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
+let apiCalls = 0, lastCtx = null; const records = []; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
 const fakeFetch = async (url, opts) => {
   if (url === "/api/config") return { ok: true, json: async () => ({ live: false, model: "claude-opus-5" }) };
   if (url === "/api/theory") return { ok: true, json: async () => THEORY };
+  if (url === "/api/record") { records.push(JSON.parse(opts.body).record); return { ok: true }; }
   if (url === "/api/step") {
     apiCalls++;
     const { step, ctx } = JSON.parse(opts.body); lastCtx = ctx;
@@ -190,6 +191,19 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     must(!q(".sheet").innerHTML.includes("Первый шаг"), "«первый шаг» убран и из собранной карты");
     must(q(".sheet").innerHTML.includes("Выбранный подход 1 из 2") && q(".sheet").innerHTML.includes("Выбранный подход 2 из 2"), "в карте оба выбранных подхода");
     must(raw()[0].approachIds.length === 2, "в истории сохраняются оба подхода");
+    await wait(900);
+    must(records.length === 0, "галочка снята — в таблицу ничего не уходит");
+    must(q(".contact [data-share]"), "на карте есть вопрос про контакты");
+    click(q('[data-share="yes"]')); await wait(20);
+    must(document.querySelectorAll("[data-contact]").length === 5, "при «да» — пять полей контактов");
+    for (const [k, v] of [["last_name", "Иванова"], ["first_name", "Анна"], ["company", "Тест"], ["position", "CEO"], ["email", "a@b.ru"]]) {
+      const el = q(`[data-contact="${k}"]`); el.value = v; el.dispatchEvent(new window.Event("input", { bubbles: true }));
+    }
+    click(q("#contactSend")); await wait(60);
+    const rec = records.at(-1);
+    must(rec?.email === "a@b.ru" && rec.share_contacts === "да" && rec.situation.length > 10 && rec.industry === "Розничная торговля",
+      "контакты уходят в таблицу вместе с разбором");
+    must(q(".contact").textContent.includes("Спасибо"), "после отправки — благодарность");
   }
   click(q('[data-goto="decide"]'));
   await wait(40);

@@ -111,6 +111,56 @@ function histUpsert(stage) {
   if (i >= 0) list[i] = entry; else list.unshift(entry);
   list.sort((a, b) => b.updated - a.updated);
   histWrite(list);
+  sheetSync(entry);
+}
+
+/* ---------------- запись в Google-таблицу ---------------- */
+// Разбор уходит на сервер (а оттуда в таблицу), только если участник оставил галочку
+// на стартовом экране или сам отправил контакты. Ошибки записи участнику не показываем:
+// разбор не должен ломаться из-за таблицы.
+
+function sheetRecord(e) {
+  const qs = S.read?.questions || [];
+  const answers = qs.map((q, i) => {
+    const picked = S.answers[q.id] || "", own = (S.free[q.id] || "").trim();
+    return `${i + 1}. ${q.text}\n→ ${[picked, own].filter(Boolean).join(" — ") || "(без ответа)"}`;
+  }).join("\n\n");
+  const h = S.refine?.hypothesis || S.read?.hypothesis;
+  const axes = S.refine?.axes || [];
+  return {
+    id: e.id, created: new Date(e.at).toISOString(), updated: new Date(e.updated).toISOString(),
+    stage: e.stage, demo: e.demo ? "да" : "нет", consent: S.consent ? "да" : "нет",
+    industry: S.industry, role: S.role, situation: S.situation,
+    restated: S.read?.restated || "",
+    challenges: (S.read?.challenges || []).map(c => `${c.primary ? "★ " : ""}${c.title} — ${RU[c.type] || c.type}`).join("\n"),
+    hypothesis: h ? `${RU[h.type] || h.type} (${Math.round((h.confidence || 0) * 100)}%): ${h.why}` : "",
+    answers, extra: S.extra,
+    chosen_type: S.chosenType ? RU[S.chosenType] : "",
+    axes: axes.map((a, i) => `${a.a} — ${a.b}: ${S.positions[i] ?? a.position?.value ?? ""}/100`).join("\n"),
+    approaches: S.approachIds.map(id => APPR_NAME[id] || id).join("; "),
+    first_step: S.firstStep,
+    decide: S.decide || "",
+  };
+}
+
+let sheetTimer = null;
+function sheetSync(entry, force = false) {
+  if (!force && !S.consent) return;
+  const record = sheetRecord(entry);
+  clearTimeout(sheetTimer);
+  // Небольшая задержка схлопывает серию быстрых обновлений в одну запись.
+  return new Promise((resolve) => {
+    sheetTimer = setTimeout(() => sheetPost(record).then(resolve), force ? 0 : 800);
+  });
+}
+
+async function sheetPost(record) {
+  try {
+    const r = await fetch("/api/record", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ record }),
+    });
+    return r.ok;
+  } catch { return false; }
 }
 function histDelete(id) { histWrite(histLoad().filter(e => e.id !== id)); }
 function histClear() { try { localStorage.removeItem(HIST_KEY); } catch {} histBadge(); }
@@ -125,6 +175,7 @@ function histOpen(id) {
     // Старые записи хранили один подход в approachId — поднимаем его в список.
     approachIds: e.approachIds || (e.approachId ? [e.approachId] : []), firstStep: e.firstStep || "",
     step, error: null, busy: false, decideRequested: Boolean(e.decide),
+    contact: { share: null, sent: false, sending: false, error: null },
     // Открытая из истории запись — режим просмотра: листаем уже посчитанные шаги
     // вперёд и назад, агента не трогаем. Продолжить разбор можно кнопкой.
     browse: true,
@@ -163,6 +214,7 @@ const S = {
   read: null, answers: {}, free: {}, extra: "", refine: null,
   chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
   decide: null, approachIds: [], firstStep: "", error: null, busy: false, savedNote: null,
+  contact: { share: null, sent: false, sending: false, error: null },
 };
 
 /* ------------------------------- транспорт ------------------------------- */
@@ -220,6 +272,7 @@ function parkAndReset() {
     step: "input", situation: "", industry: S.industry, role: S.role, runId: null, read: null, answers: {}, free: {}, extra: "",
     refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
     approachIds: [], firstStep: "", error: null, busy: false, savedNote: note, browse: false,
+    contact: { share: null, sent: false, sending: false, error: null },
   });
   view = "diag"; render(); window.scrollTo({ top: 0 });
 }
@@ -687,11 +740,62 @@ function viewSheet() {
     </div>
     ${body}
   </div>
+  ${S.browse ? "" : contactCard()}
   <div class="acts noprint">
     <button class="go" onclick="window.print()">Распечатать</button>
     <button class="back" data-goto="decide">Назад</button>
     ${parkButton()}
   </div>`;
+}
+
+/* ---------------- контакты для исследования ---------------- */
+
+const CONTACT_FIELDS = [["last_name", "Фамилия"], ["first_name", "Имя"], ["company", "Компания"],
+  ["position", "Должность"], ["email", "Email"]];
+
+function contactCard() {
+  const c = S.contact;
+  if (c.sent) {
+    return `<div class="card hl noprint contact" style="margin-top:24px">
+      <div class="k">Спасибо</div>
+      <p>${c.share === "yes" ? "Контакты и разбор переданы разработчикам тренажёра. Мы можем связаться с вами, чтобы уточнить детали кейса."
+        : "Ответ сохранён. Контакты мы не получили."}</p></div>`;
+  }
+  const yn = (v, label) => `<button class="pick" data-share="${v}" aria-pressed="${c.share === v}"><b>${label}</b></button>`;
+  return `<div class="card noprint contact" style="margin-top:24px">
+    <div class="k">Для исследования · необязательно</div>
+    <h4 style="margin-bottom:12px">Готовы ли вы поделиться своими контактами с разработчиками тренажёра
+      для уточнения деталей вашего кейса и дальнейшего улучшения приложения?</h4>
+    <div class="yn">${yn("yes", "Да")}${yn("no", "Нет")}</div>
+    ${c.share === "yes" ? `<p class="note" style="margin-top:12px">Вместе с контактами разработчикам будет передан этот разбор.</p>
+      <div class="contact-grid">${CONTACT_FIELDS.map(([k, label]) => `<label class="f"><b>${label}</b>
+        <input type="${k === "email" ? "email" : "text"}" data-contact="${k}" value="${esc(c[k] || "")}"
+          ${k === "email" ? 'autocomplete="email" inputmode="email"' : ""}></label>`).join("")}</div>` : ""}
+    ${c.error ? `<p class="err">${esc(c.error)}</p>` : ""}
+    ${c.share ? `<div class="acts" style="margin-top:16px">
+      <button class="go" id="contactSend" ${c.sending ? "disabled" : ""}>${c.sending ? "Отправляем…" : c.share === "yes" ? "Отправить контакты" : "Готово"}</button>
+    </div>` : ""}
+  </div>`;
+}
+
+async function contactSend() {
+  const c = S.contact;
+  if (c.share === "yes") {
+    if (!(c.last_name || "").trim() && !(c.first_name || "").trim()) { c.error = "Укажите хотя бы фамилию или имя."; render(); return; }
+    if (!/^\S+@\S+\.\S+$/.test((c.email || "").trim())) { c.error = "Проверьте email — без него мы не сможем связаться."; render(); return; }
+  }
+  c.error = null; c.sending = true; render();
+  const entry = histLoad().find(x => x.id === S.runId);
+  let ok = true;
+  if (entry) {
+    const record = { ...sheetRecord(entry), share_contacts: c.share === "yes" ? "да" : "нет" };
+    if (c.share === "yes") for (const [k] of CONTACT_FIELDS) record[k] = (c[k] || "").trim();
+    // Отказ делиться контактами без галочки согласия — в таблицу вообще ничего не пишем.
+    if (c.share === "yes" || S.consent) { clearTimeout(sheetTimer); ok = await sheetPost(record); }
+  }
+  c.sending = false;
+  if (!ok && c.share === "yes") { c.error = "Не получилось отправить. Попробуйте ещё раз чуть позже."; render(); return; }
+  c.sent = true; render();
 }
 
 /* ------------------------------- теория ------------------------------- */
@@ -1065,6 +1169,10 @@ document.addEventListener("click", async (e) => {
     render(); return;
   }
 
+  const sh = e.target.closest("[data-share]");
+  if (sh) { S.contact.share = sh.dataset.share; S.contact.error = null; render(); return; }
+  if (e.target.closest("#contactSend")) { contactSend(); return; }
+
   if (e.target.closest("#tosheet")) {
     const f = $("#first"); if (f) S.firstStep = f.value.trim();
     S.step = "sheet"; histUpsert("sheet"); render(); window.scrollTo({ top: 0 }); return;
@@ -1088,6 +1196,7 @@ document.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "extra") { S.extra = e.target.value; return; }
+  if (e.target.dataset?.contact) { S.contact[e.target.dataset.contact] = e.target.value; return; }
   if (e.target.id === "industry" || e.target.id === "role") { S[e.target.id] = e.target.value.trim(); return; }
   if (e.target.classList?.contains("beam")) {
     const i = Number(e.target.dataset.axis);
