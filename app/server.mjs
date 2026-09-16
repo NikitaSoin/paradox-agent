@@ -154,7 +154,7 @@ const server = createServer(async (req, res) => {
     const out = { version: VERSION, configured: Boolean(SHEETS_URL), reachable: false, answer: null, error: null };
     if (SHEETS_URL) {
       try {
-        const r = await fetch(SHEETS_URL, { signal: AbortSignal.timeout(15000) });
+        const r = await fetch(SHEETS_URL, { signal: AbortSignal.timeout(45000) });
         const text = await r.text();
         out.answer = text.slice(0, 120);
         out.reachable = r.ok && text.includes('"ok":true');
@@ -173,24 +173,25 @@ const server = createServer(async (req, res) => {
     const record = body?.record;
     if (!record?.id || JSON.stringify(record).length > 300000) { res.writeHead(400); return res.end("bad record"); }
     if (!SHEETS_URL) { res.writeHead(204); return res.end(); }
-    try {
-      const r = await fetch(SHEETS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: SHEETS_SECRET, record }),
-        signal: AbortSignal.timeout(20000),
-      });
-      const text = await r.text();
-      let ok = r.ok;
-      try { ok = ok && JSON.parse(text).ok === true; } catch { ok = false; }
-      if (!ok) console.error(`[sheets] запись не прошла: ${r.status} ${text.slice(0, 200)}`);
-      res.writeHead(ok ? 200 : 502, { "Content-Type": MIME[".json"] });
-      return res.end(JSON.stringify({ ok }));
-    } catch (e) {
-      console.error("[sheets] нет связи:", e?.message || e);
-      res.writeHead(502, { "Content-Type": MIME[".json"] });
-      return res.end(JSON.stringify({ ok: false }));
+    // Скрипт Google после простоя просыпается 10–30 секунд — ждём долго и пробуем дважды.
+    let ok = false;
+    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+      try {
+        const r = await fetch(SHEETS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: SHEETS_SECRET, record }),
+          signal: AbortSignal.timeout(45000),
+        });
+        const text = await r.text();
+        try { ok = r.ok && JSON.parse(text).ok === true; } catch { ok = false; }
+        if (!ok) console.error(`[sheets] запись не прошла (попытка ${attempt}): ${r.status} ${text.slice(0, 200)}`);
+      } catch (e) {
+        console.error(`[sheets] нет связи (попытка ${attempt}):`, e?.cause?.code || e?.message || e);
+      }
     }
+    res.writeHead(ok ? 200 : 502, { "Content-Type": MIME[".json"] });
+    return res.end(JSON.stringify({ ok }));
   }
 
   if (url.pathname === "/api/theory") {
