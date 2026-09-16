@@ -204,6 +204,8 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     const rec = records.at(-1);
     must(rec?.email === "a@b.ru" && rec.share_contacts === "да" && rec.situation.length > 10 && rec.industry === "Розничная торговля",
       "контакты уходят в таблицу вместе с разбором");
+    must(rec.decide.startsWith("Рекомендован:") && !rec.decide.includes("undefined"), "итог модели в таблице — обычным текстом");
+    must(rec.role === "Генеральный директор", "должность уходит в таблицу");
     must(q(".contact").textContent.includes("Спасибо"), "после отправки — благодарность");
   }
   click(q('[data-goto="decide"]'));

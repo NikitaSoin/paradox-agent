@@ -139,8 +139,35 @@ function sheetRecord(e) {
     axes: axes.map((a, i) => `${a.a} — ${a.b}: ${S.positions[i] ?? a.position?.value ?? ""}/100`).join("\n"),
     approaches: S.approachIds.map(id => APPR_NAME[id] || id).join("; "),
     first_step: S.firstStep,
-    decide: S.decide || "",
+    decide: decideText(S.decide),
   };
+}
+
+const FIT_RU = { high: "подходит хорошо", medium: "подходит частично", low: "подходит слабо" };
+
+/** Итог модели на последнем шаге — обычным текстом для таблицы. */
+function decideText(d) {
+  if (!d) return "";
+  const lines = [];
+  if (d.approaches) {
+    lines.push(`Рекомендован: ${APPR_NAME[d.recommended] || d.recommended} — ${d.recommended_why}`);
+    for (const a of d.approaches) {
+      lines.push("", `• ${APPR_NAME[a.id] || a.id} (${FIT_RU[a.fit] || a.fit})`, a.why);
+      if (a.questions?.length) lines.push("Вопросы к себе:", ...a.questions.map(q => `— ${q}`));
+      if (a.first_step) lines.push(`Первый шаг: ${a.first_step}`);
+    }
+  } else if (d.frame) {
+    lines.push(`Проблема: ${d.frame}`, "", "Гипотезы причин:",
+      ...(d.causes || []).map(c => `— ${c.hypothesis} (проверка: ${c.check})`),
+      "", `Признак «решено»: ${d.done}`, `Первый шаг: ${d.first_step}`, `Если вернётся: ${d.return_check}`);
+  } else if (d.alt_a) {
+    lines.push(`A: ${d.alt_a} — цена отказа: ${d.cost_a}`, `B: ${d.alt_b} — цена отказа: ${d.cost_b}`,
+      "", `Критерий выбора: ${d.criterion}`, `Срок: ${d.deadline}`,
+      `Что изменило бы выбор: ${d.what_would_change}`, `Если вернётся: ${d.return_check}`);
+  } else {
+    return JSON.stringify(d);
+  }
+  return lines.join("\n");
 }
 
 let sheetTimer = null;

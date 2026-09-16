@@ -47,7 +47,7 @@ const COLUMNS = [
   ["axes", "Оси и положение на них"],
   ["approaches", "Выбранные подходы"],
   ["first_step", "Первый шаг (участник)"],
-  ["decide", "Итог модели (JSON)"],
+  ["decide", "Итог модели"],
   ["share_contacts", "Готов поделиться контактами"],
   ["last_name", "Фамилия"],
   ["first_name", "Имя"],
@@ -60,6 +60,8 @@ function doPost(e) {
   let data;
   try { data = JSON.parse(e.postData.contents); } catch (err) { return reply({ ok: false, error: "bad json" }); }
   if (data.secret !== SECRET) return reply({ ok: false, error: "forbidden" });
+  if (data.action === "get") return readRow(data.id);
+  if (data.action === "last") return readLast(Number(data.n) || 3);
   if (!data.record || !data.record.id) return reply({ ok: false, error: "no id" });
 
   const lock = LockService.getScriptLock();
@@ -89,6 +91,27 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// Чтение — для проверки, что именно легло в таблицу. Только с паролем.
+function rowToObject(values) {
+  const o = {};
+  COLUMNS.forEach(([key], i) => { if (values[i] !== "") o[key] = values[i]; });
+  return o;
+}
+function readRow(id) {
+  const sheet = ensureSheet();
+  const found = sheet.getRange("A:A").createTextFinder(String(id)).matchEntireCell(true).findNext();
+  if (!found) return reply({ ok: false, error: "not found" });
+  return reply({ ok: true, row: found.getRow(), record: rowToObject(sheet.getRange(found.getRow(), 1, 1, COLUMNS.length).getValues()[0]) });
+}
+function readLast(n) {
+  const sheet = ensureSheet();
+  const last = sheet.getLastRow();
+  if (last < 2) return reply({ ok: true, rows: [] });
+  const from = Math.max(2, last - n + 1);
+  const values = sheet.getRange(from, 1, last - from + 1, COLUMNS.length).getValues();
+  return reply({ ok: true, rows: values.map((v, i) => ({ row: from + i, record: rowToObject(v) })) });
 }
 
 function doGet() {
