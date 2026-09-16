@@ -15,13 +15,13 @@ window.confirm = () => true;
 window.print = () => {};
 
 // Заглушка сети: /api/config, /api/theory и SSE-поток /api/step из демо-данных.
-let apiCalls = 0; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
+let apiCalls = 0, lastCtx = null; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
 const fakeFetch = async (url, opts) => {
   if (url === "/api/config") return { ok: true, json: async () => ({ live: false, model: "claude-opus-5" }) };
   if (url === "/api/theory") return { ok: true, json: async () => THEORY };
   if (url === "/api/step") {
     apiCalls++;
-    const { step } = JSON.parse(opts.body);
+    const { step, ctx } = JSON.parse(opts.body); lastCtx = ctx;
     const payload = `event: thinking\ndata: ${JSON.stringify({ text: "…" })}\n\n` +
       `event: done\ndata: ${JSON.stringify({ data: mockStep(step), demo: true })}\n\n`;
     const bytes = new TextEncoder().encode(payload);
@@ -62,8 +62,12 @@ must(window.localStorage.getItem("paradox.consent") === "no", "снятая га
 console.log("\n1. Экран входа");
 must(q("#sit"), "поле ввода ситуации");
 q("#sit").value = "Совет требует сократить расходы на 20%, но единственный источник роста — новые продукты, и режем мы их.";
+q("#industry").value = "Розничная торговля";
+q("#role").value = "Генеральный директор";
+must(q("#industryList option") && q("#roleList option"), "подсказки для отрасли и должности");
 click(q("#start"));
 await wait(120);
+must(lastCtx?.industry === "Розничная торговля" && lastCtx?.role === "Генеральный директор", "отрасль и должность уходят в запрос");
 
 console.log("\n2. Шаг 2 · Вопросы (только вопросы, без гипотезы)");
 must(q("#refine"), "кнопка «Уточнить»");

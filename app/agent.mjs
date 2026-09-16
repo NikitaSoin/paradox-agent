@@ -317,6 +317,8 @@ const STEPS = {
 
 function userTurn(step, ctx, instructions) {
   const p = [instructions];
+  const who = [ctx.industry && `отрасль — ${ctx.industry}`, ctx.role && `должность — ${ctx.role}`].filter(Boolean);
+  if (who.length) p.push(`КТО ОПИСЫВАЕТ СИТУАЦИЮ: ${who.join("; ")}. Учитывай это в формулировках и примерах, но не делай выводов о типе вызова только из отрасли или должности.`);
   p.push(`СИТУАЦИЯ ПОЛЬЗОВАТЕЛЯ (его словами):\n${ctx.situation}`);
   if (ctx.read) p.push(`ТВОЁ ПЕРВИЧНОЕ ЧТЕНИЕ:\n${JSON.stringify(ctx.read, null, 1)}`);
   if (ctx.answers?.length) {

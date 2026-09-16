@@ -97,7 +97,7 @@ function histUpsert(stage) {
     updated: Date.now(),
     stage,
     demo: !S.live,
-    situation: S.situation,
+    situation: S.situation, industry: S.industry, role: S.role,
     restated: S.read.restated,
     guess: S.refine?.hypothesis?.type || null,
     chosenType: S.chosenType,
@@ -119,7 +119,7 @@ function histOpen(id) {
   if (!e) return;
   const step = LEGACY_STEP[e.stage] || e.stage || "questions";
   Object.assign(S, {
-    runId: e.id, situation: e.situation, read: e.read, refine: e.refine, decide: e.decide,
+    runId: e.id, situation: e.situation, industry: e.industry || "", role: e.role || "", read: e.read, refine: e.refine, decide: e.decide,
     answers: e.answers || {}, free: e.free || {}, extra: e.extra || "", chosenType: e.chosenType, axisIndex: e.axisIndex ?? 0,
     positions: e.positions || (e.position != null ? [e.position] : (e.refine?.axes || []).map(a => a.position?.value ?? 50)),
     // Старые записи хранили один подход в approachId — поднимаем его в список.
@@ -159,7 +159,7 @@ function browseNav() {
 }
 
 const S = {
-  live: false, step: "input", situation: "", runId: null,
+  live: false, step: "input", situation: "", industry: "", role: "", runId: null,
   read: null, answers: {}, free: {}, extra: "", refine: null,
   chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
   decide: null, approachIds: [], firstStep: "", error: null, busy: false, savedNote: null,
@@ -200,7 +200,8 @@ function callStep(step, ctx) {
 async function run(step, ctx) {
   S.busy = true; S.error = null; render();
   try {
-    const out = await callStep(step, ctx);
+    // Отрасль и должность — общий контекст для всех шагов разбора.
+    const out = await callStep(step, { industry: S.industry, role: S.role, ...ctx });
     S.busy = false;
     return out.data;
   } catch (e) {
@@ -216,7 +217,7 @@ function parkAndReset() {
   if (had && !S.browse) histUpsert(S.step);
   const note = had && !S.browse ? { id: S.runId, title: S.read.restated, done: S.step === "sheet" } : null;
   Object.assign(S, {
-    step: "input", situation: "", runId: null, read: null, answers: {}, free: {}, extra: "",
+    step: "input", situation: "", industry: S.industry, role: S.role, runId: null, read: null, answers: {}, free: {}, extra: "",
     refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
     approachIds: [], firstStep: "", error: null, busy: false, savedNote: note, browse: false,
   });
@@ -250,12 +251,22 @@ function thinkBox(label) {
   </div>`;
 }
 
+const INDUSTRIES = ["Розничная торговля", "Оптовая торговля и дистрибуция", "Производство",
+  "Металлургия и горнодобыча", "Нефть, газ, энергетика", "Химия и нефтехимия", "Строительство и девелопмент",
+  "Транспорт и логистика", "Финансы и страхование", "IT и телеком", "Фармацевтика и здравоохранение",
+  "Агро и пищевая промышленность", "Профессиональные услуги и консалтинг", "Образование", "Госсектор и госкомпании"];
+const ROLES = ["Собственник / акционер", "Генеральный директор", "Член совета директоров", "Топ-менеджер (C-level)",
+  "Директор направления / подразделения", "Руководитель среднего звена", "Основатель / предприниматель",
+  "Консультант / эксперт"];
+
 function viewInput() {
+  const opts = (list) => list.map(v => `<option value="${esc(v)}"></option>`).join("");
   return `${stepsBar()}
   <div class="eyebrow">Шаг 1 · Ситуация</div>
   <h1 style="margin-top:10px">Опишите управленческий вызов, с которым имеете дело</h1>
-  <p class="lede">Опишите двумя-тремя предложениями своими словами — дальше мы зададим уточняющие
-  вопросы, чтобы точнее определить тип вашей ситуации. Без названий компаний и людей — они не нужны.</p>
+  <p class="lede">Опишите его своими словами. Чем подробнее вы опишете ситуацию, тем полнее будет
+  диагностика. Дальше мы зададим уточняющие вопросы, чтобы точнее определить тип вашей ситуации.
+  Без названий компаний и людей — они не нужны.</p>
   ${S.savedNote ? `<div class="card hl" style="margin-top:20px">
     <div class="k">${S.savedNote.done ? "Разбор завершён" : "Разбор отложен"}</div>
     <p style="font-size:.93rem">«${esc(S.savedNote.title)}» сохранён в истории${S.savedNote.done ? "" : " на том шаге, где вы остановились"}.
@@ -265,19 +276,34 @@ function viewInput() {
     </div>
   </div>` : ""}
   <div class="stack" style="margin-top:20px">
-    <textarea id="sit" rows="6" placeholder="Что тянет вас в две стороны, между чем и чем, и почему это встало именно сейчас">${esc(S.situation)}</textarea>
+    <div class="who">
+      <label><span class="k">Ваша отрасль</span>
+        <input type="text" id="industry" list="industryList" autocomplete="off"
+          placeholder="Выберите из списка или впишите" value="${esc(S.industry)}">
+        <datalist id="industryList">${opts(INDUSTRIES)}</datalist></label>
+      <label><span class="k">Ваша должность</span>
+        <input type="text" id="role" list="roleList" autocomplete="off"
+          placeholder="Выберите из списка или впишите" value="${esc(S.role)}">
+        <datalist id="roleList">${opts(ROLES)}</datalist></label>
+    </div>
+    <textarea id="sit" rows="9" placeholder="Общий контекст ситуации и ваше к ней отношение. Как вы пришли в эту точку. Между какими вариантами действия вы выбираете. Что или кто мешает сделать выбор прямо сейчас. Какой вариант кажется вам предпочтительным. Как будет развиваться ситуация в будущем.">${esc(S.situation)}</textarea>
     <div class="card flat example">
       <div class="k">Пример — так это выглядит в готовом виде</div>
-      <p>Региональные директора просят самостоятельности в закупках и ассортименте: они лучше
-      чувствуют местный спрос, и там, где мы её давали, продажи росли. Централизованные закупки
-      при этом дают объёмную скидку у поставщиков и единый стандарт качества; при переходе
-      к региональной модели мы теряем и то и другое. Вопрос обострился после открытия восьми
-      точек за год: центр перестал успевать согласовывать ассортимент.</p>
+      <p>Мы — розничная сеть в нескольких регионах. Закупки и ассортимент исторически ведёт центр:
+      это даёт объёмные скидки у поставщиков и единый стандарт качества. За последний год мы открыли
+      восемь новых точек, центр перестал успевать согласовывать ассортимент, а региональные директора
+      требуют самостоятельности — там, где мы её давали в порядке эксперимента, продажи росли.</p>
+      <p>Выбираю между тремя вариантами: оставить закупки в центре и ускорить согласования, отдать
+      ассортимент регионам целиком или разделить — базовая матрица в центре, местная часть в регионах.
+      Решить сразу мешает то, что закупочная команда и финансовый директор против децентрализации:
+      для них это потеря скидок и контроля, а регионы грозят уходом сильных директоров.</p>
+      <p>Мне ближе разделение, но нет уверенности, что его удержат: боюсь, через год мы снова будем спорить
+      о том же. Если ничего не менять, центр будет тормозить рост, а если отдать всё регионам — сеть
+      расползётся по стандартам и марже.</p>
     </div>
     ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
     <div class="acts" style="margin-top:0">
       <button class="go" id="start">Разобрать ситуацию</button>
-      <span class="note">Описание уходит только в модель для этого прогона. Разбор сохранится в истории — в вашем браузере, не на сервере.</span>
     </div>
     ${S.busy ? thinkBox("Агент читает ситуацию") : ""}
   </div>`;
@@ -957,6 +983,7 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("#start")) {
     S.savedNote = null;
     S.situation = $("#sit").value.trim();
+    S.industry = $("#industry").value.trim(); S.role = $("#role").value.trim();
     if (S.situation.length < 15) { S.error = "Добавьте пару предложений — по одной фразе разобрать нечего."; render(); return; }
     const data = await run("read", { situation: S.situation });
     if (data) {
@@ -1061,6 +1088,7 @@ document.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "extra") { S.extra = e.target.value; return; }
+  if (e.target.id === "industry" || e.target.id === "role") { S[e.target.id] = e.target.value.trim(); return; }
   if (e.target.classList?.contains("beam")) {
     const i = Number(e.target.dataset.axis);
     setAxisPosition(i, Number(e.target.value));
