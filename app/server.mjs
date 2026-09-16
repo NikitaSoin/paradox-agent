@@ -67,6 +67,8 @@ const ACCESS_CODE = process.env.ACCESS_CODE || "";
 // Таблица прописана прямо в коде, чтобы на хостинге не заводить переменные.
 // Переменные окружения, если заданы, перебивают. Ключ DeepSeek так не храним:
 // репозиторий публичный, а ключ — это деньги.
+// Метка версии, чтобы по /api/sheets-check было видно, что хостинг подтянул свежий код.
+const VERSION = "2026-09-17-sheets";
 const SHEETS_URL = process.env.SHEETS_URL ??
   "https://script.google.com/macros/s/AKfycbw6bVb02lg0fncKOuyEpXkHEDFn_yasKodQkN96pRu5o-EdANwuFSYIPefPymE7P2Sdeg/exec";
 const SHEETS_SECRET = process.env.SHEETS_SECRET ?? "Snm081105";
@@ -144,6 +146,22 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/config") {
     res.writeHead(200, { "Content-Type": MIME[".json"] });
     return res.end(JSON.stringify({ live: hasKey, ...providerInfo }));
+  }
+
+  // Самопроверка связи с таблицей: открыть в браузере /api/sheets-check.
+  // Ничего не пишет — только спрашивает скрипт «ты жив?».
+  if (url.pathname === "/api/sheets-check") {
+    const out = { version: VERSION, configured: Boolean(SHEETS_URL), reachable: false, answer: null, error: null };
+    if (SHEETS_URL) {
+      try {
+        const r = await fetch(SHEETS_URL, { signal: AbortSignal.timeout(15000) });
+        const text = await r.text();
+        out.answer = text.slice(0, 120);
+        out.reachable = r.ok && text.includes('"ok":true');
+      } catch (e) { out.error = String(e?.cause?.code || e?.message || e); }
+    }
+    res.writeHead(200, { "Content-Type": MIME[".json"] });
+    return res.end(JSON.stringify(out, null, 2));
   }
 
   // Запись разбора в Google-таблицу. Адрес скрипта и пароль живут только на сервере,
