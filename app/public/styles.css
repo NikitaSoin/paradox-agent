@@ -94,6 +94,19 @@ main{padding:38px 30px 90px; min-width:0}
   main{padding:22px 16px 70px}
 }
 
+/* ---------------- стартовый экран с условиями ---------------- */
+.gate{position:fixed; inset:0; z-index:100; background:var(--paper); overflow-y:auto;
+  display:flex; align-items:flex-start; justify-content:center; padding:max(6vh,24px) 16px 32px}
+.gate[hidden]{display:none}
+.gate-box{width:100%; max-width:680px}
+.gate-box h1{margin-top:10px}
+.gate-terms{margin:22px 0 0; padding:0 0 0 1.1em; display:flex; flex-direction:column; gap:10px;
+  color:var(--ink-2); font-size:.92rem}
+.gate-check{display:flex; align-items:center; gap:14px; margin-top:26px; padding:16px 18px; cursor:pointer;
+  background:var(--surface); border:1px solid var(--line-strong); border-radius:3px; font-weight:600}
+.gate-check input{width:28px; height:28px; flex:0 0 28px; margin:0; accent-color:var(--ink); cursor:pointer}
+.gate-check:hover{border-color:var(--ink-3)}
+
 /* ---------------- primitives ---------------- */
 .eyebrow{font-family:var(--mono); font-size:.65rem; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3)}
 .lede{color:var(--ink-2); font-size:1rem; margin-top:12px}
@@ -132,13 +145,15 @@ textarea:focus,input[type=text]:focus{border-color:var(--focus); outline:none}
 /* ---------------- thinking ---------------- */
 .think{border:1px dashed var(--line-strong); border-radius:3px; padding:14px 16px; background:var(--sunk)}
 .think .k{margin-bottom:8px}
-.think pre{
-  margin:0; font-family:var(--mono); font-size:.74rem; line-height:1.55; color:var(--ink-3);
-  white-space:pre-wrap; max-height:190px; overflow:auto;
+.dotfield{display:grid; grid-template-columns:repeat(auto-fill,minmax(14px,1fr)); gap:10px 6px; padding:6px 0 2px}
+.dotfield i{
+  width:5px; height:5px; border-radius:50%; justify-self:center; background:var(--ink-3);
+  opacity:.12; animation:dotblink 2s ease-in-out infinite;
 }
+@keyframes dotblink{0%,100%{opacity:.12; transform:scale(.8)}50%{opacity:.85; transform:scale(1.15)}}
 .dots::after{content:"·"; animation:dots 1.4s steps(4,end) infinite}
 @keyframes dots{0%{content:"·"}25%{content:"··"}50%{content:"···"}75%{content:"····"}}
-@media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:"···"}}
+@media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:"···"}.dotfield i{animation:none;opacity:.35}}
 
 /* ---------------- criteria ---------------- */
 .crit{display:flex; flex-direction:column}
@@ -305,7 +320,7 @@ table.lib td.src{color:var(--ink-3); font-size:.78rem}
 .sheet-h{display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin-bottom:6px}
 .sheet .sect{margin-top:20px; padding-top:16px; border-top:1px solid var(--line)}
 @media print{
-  .rail,.acts,.think,.noprint,.steps{display:none!important}
+  .rail,.acts,.think,.noprint,.steps,.gate{display:none!important}
   .shell{grid-template-columns:1fr} main{padding:0} body{background:#fff;color:#000}
   .sheet{border:1px solid #999; box-shadow:none; padding:0}
 }

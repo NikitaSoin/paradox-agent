@@ -1,39 +1,10 @@
-// Слой провайдеров. Оба реализуют один интерфейс:
-//   run({ system, user, schema, maxTokens, onThinking }) -> { json, usage }
-// system — массив блоков [{ text, cache }]; кэширование использует только Anthropic.
-
-import Anthropic from "@anthropic-ai/sdk";
+// Единственный провайдер — DeepSeek. Интерфейс:
+//   run({ system, user, schema, maxTokens, effort }) -> { json, usage }
+// system — массив блоков [{ text }].
+// Текст рассуждений модели наружу не отдаётся: пока модель думает, интерфейс
+// показывает анимацию, а не поток слов.
 
 const trim = (u) => (u || "").replace(/\/+$/, "");
-
-/* ----------------------------- Anthropic ----------------------------- */
-
-function anthropicProvider() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  const baseURL = trim(process.env.ANTHROPIC_BASE_URL) || undefined;
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
-  const client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
-
-  return {
-    id: "anthropic", label: "Anthropic", model,
-    proxied: Boolean(baseURL),
-    async run({ system, user, schema, maxTokens, effort = "medium", onThinking }) {
-      const stream = client.messages.stream({
-        model, max_tokens: maxTokens,
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort, format: { type: "json_schema", schema } },
-        system: cacheBreakpoint(system),
-        messages: [{ role: "user", content: user }],
-      });
-      stream.on("thinking", (d) => onThinking?.(d));
-      const msg = await stream.finalMessage();
-      if (msg.stop_reason === "refusal") throw new Error("REFUSAL");
-      const text = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
-      return { json: parseJson(text), usage: msg.usage };
-    },
-  };
-}
 
 /* ------------------------------ DeepSeek ----------------------------- */
 // API совместим с OpenAI. Схему модель не гарантирует, поэтому схема уходит
@@ -58,7 +29,7 @@ function deepseekProvider() {
   const dsEffort = (e) => process.env.DEEPSEEK_EFFORT ||
     ({ low: "low", medium: "low", high: "high", max: "max" }[e] || "high");
 
-  async function once({ system, user, schema, maxTokens, effort, onThinking }) {
+  async function once({ system, user, schema, maxTokens, effort }) {
     const sys = system.map(b => b.text).join("\n\n") +
       "\n\n## ФОРМАТ ОТВЕТА\nВерни ОДИН объект JSON строго по этой схеме и ничего кроме него — " +
       "без пояснений, без markdown-ограждений. Заполни все обязательные поля; " +
@@ -98,7 +69,6 @@ function deepseekProvider() {
         if (ev.usage) usage = ev.usage;
         const d = ev.choices?.[0]?.delta;
         if (!d) continue;
-        if (d.reasoning_content) onThinking?.(d.reasoning_content);
         if (d.content) out += d.content;
         if (ev.choices?.[0]?.finish_reason) finishReason = ev.choices[0].finish_reason;
       }
@@ -146,13 +116,6 @@ function deepseekProvider() {
 
 /* ------------------------------- утилиты ------------------------------ */
 
-/** Одна точка кэширования — на последнем блоке, помеченном cache. */
-function cacheBreakpoint(blocks) {
-  const last = blocks.map((b, i) => (b.cache ? i : -1)).filter(i => i >= 0).pop();
-  return blocks.map((b, i) => ({ type: "text", text: b.text,
-    ...(i === last ? { cache_control: { type: "ephemeral" } } : {}) }));
-}
-
 function parseJson(text) {
   const t = (text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
   try { return JSON.parse(t); } catch {}
@@ -175,22 +138,7 @@ function missingKeys(obj, schema, path = "") {
 
 /* ------------------------------- выбор -------------------------------- */
 
-/** Провайдер по идентификатору; null, если ключа для него нет. */
-export function getProvider(id) {
-  if (id === "anthropic") return anthropicProvider();
-  if (id === "deepseek") return deepseekProvider();
-  return null;
-}
-
+/** Провайдер DeepSeek; null, если ключа нет (тогда сайт работает в демо-режиме). */
 export function pickProvider() {
-  const want = (process.env.PROVIDER || "").toLowerCase();
-  const a = anthropicProvider(), d = deepseekProvider();
-  if (want === "deepseek") return d || a;
-  if (want === "anthropic") return a || d;
-  return a || d;
-}
-
-export function listProviders() {
-  return [anthropicProvider(), deepseekProvider()].filter(Boolean)
-    .map(p => ({ id: p.id, label: p.label, model: p.model, proxied: p.proxied }));
+  return deepseekProvider();
 }

@@ -158,10 +158,8 @@ function browseNav() {
   </div>`;
 }
 
-const PROV_KEY = "paradox.provider";
-
 const S = {
-  live: false, provider: null, providers: [], step: "input", situation: "", runId: null,
+  live: false, step: "input", situation: "", runId: null,
   read: null, answers: {}, free: {}, extra: "", refine: null,
   chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
   decide: null, approachIds: [], firstStep: "", error: null, busy: false, savedNote: null,
@@ -169,11 +167,11 @@ const S = {
 
 /* ------------------------------- транспорт ------------------------------- */
 
-function callStep(step, ctx, onThinking) {
+function callStep(step, ctx) {
   return new Promise((resolve, reject) => {
     fetch("/api/step", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step, ctx, provider: S.provider }),
+      body: JSON.stringify({ step, ctx, consent: S.consent }),
     }).then(async (res) => {
       if (!res.ok || !res.body) return reject(new Error("Сервер вернул " + res.status));
       const reader = res.body.getReader();
@@ -190,8 +188,7 @@ function callStep(step, ctx, onThinking) {
           const dm = /^data: (.+)$/m.exec(chunk)?.[1];
           if (!ev || !dm) continue;
           const data = JSON.parse(dm);
-          if (ev === "thinking") onThinking?.(data.text);
-          else if (ev === "done") resolve(data);
+          if (ev === "done") resolve(data);
           else if (ev === "error") reject(new Error(data.message));
         }
       }
@@ -202,13 +199,8 @@ function callStep(step, ctx, onThinking) {
 
 async function run(step, ctx) {
   S.busy = true; S.error = null; render();
-  const pre = $("#think pre");
-  if (pre) pre.textContent = "";
   try {
-    const out = await callStep(step, ctx, (t) => {
-      const p = $("#think pre");
-      if (p) { p.textContent += t; p.scrollTop = p.scrollHeight; }
-    });
+    const out = await callStep(step, ctx);
     S.busy = false;
     return out.data;
   } catch (e) {
@@ -246,10 +238,15 @@ function stepsBar() {
     `<i class="${n < i ? "done" : n === i ? "now" : ""}"></i>`).join("")}</div>`;
 }
 
+/** Пока модель думает — поле точек, которые загораются в случайном порядке. Текст рассуждений не показываем. */
 function thinkBox(label) {
-  return `<div class="think" id="think">
+  const dots = Array.from({ length: 72 }, () => {
+    const delay = (Math.random() * 2.4).toFixed(2), dur = (1.2 + Math.random() * 1.6).toFixed(2);
+    return `<i style="animation-delay:-${delay}s;animation-duration:${dur}s"></i>`;
+  }).join("");
+  return `<div class="think" id="think" role="status" aria-live="polite">
     <div class="k">${esc(label)} <span class="dots"></span></div>
-    <pre></pre>
+    <div class="dotfield" aria-hidden="true">${dots}</div>
   </div>`;
 }
 
@@ -906,14 +903,6 @@ document.addEventListener("click", async (e) => {
   const th = e.target.closest("[data-theme-set]");
   if (th) { themeSet(th.dataset.themeSet); return; }
 
-  const pv = e.target.closest("[data-prov]");
-  if (pv) {
-    S.provider = pv.dataset.prov;
-    try { localStorage.setItem(PROV_KEY, S.provider); } catch {}
-    provPaint();
-    return;
-  }
-
   const del = e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); histDelete(del.dataset.del); render(); return; }
 
@@ -1133,30 +1122,35 @@ document.addEventListener("pointerup", (e) => {
 });
 document.addEventListener("pointercancel", () => { dragPlane = null; });
 
-function provPaint() {
-  const box = $("#prov");
+/* ---------------- стартовый экран с условиями ---------------- */
+// Показывается при каждом открытии сайта; в пределах вкладки после «Начать» не повторяется.
+// Галочка согласия стоит по умолчанию (opt-out); выбор запоминается и уходит с каждым шагом.
+const CONSENT_KEY = "paradox.consent";
+const GATE_SEEN = "paradox.gate.seen";
+S.consent = true;
+try { S.consent = localStorage.getItem(CONSENT_KEY) !== "no"; } catch {}
+(function gate() {
+  const box = $("#gate");
   if (!box) return;
-  if (S.providers.length < 2) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = S.providers.map(p =>
-    `<button data-prov="${esc(p.id)}" title="${esc(p.model)}" aria-pressed="${p.id === S.provider}">${esc(p.label)}</button>`).join("");
-  const cur = S.providers.find(p => p.id === S.provider);
-  const chip = $("#mode");
-  chip.lastElementChild.textContent = cur ? cur.model : "демо-режим";
-}
+  let seen = false;
+  try { seen = sessionStorage.getItem(GATE_SEEN) === "1"; } catch {}
+  if (seen) { box.hidden = true; return; }
+  $("#gateConsent").checked = S.consent;
+  $("#gateGo").addEventListener("click", () => {
+    S.consent = $("#gateConsent").checked;
+    try { localStorage.setItem(CONSENT_KEY, S.consent ? "yes" : "no"); sessionStorage.setItem(GATE_SEEN, "1"); } catch {}
+    box.hidden = true;
+  });
+  $("#gateGo").focus();
+})();
 
 (async function init() {
   try {
     const cfg = await (await fetch("/api/config")).json();
     S.live = cfg.live;
-    S.providers = cfg.all || [];
-    let saved = null;
-    try { saved = localStorage.getItem(PROV_KEY); } catch {}
-    S.provider = (saved && S.providers.some(p => p.id === saved)) ? saved : cfg.id;
     const chip = $("#mode");
     chip.className = "chip " + (cfg.live ? "live" : "demo");
     chip.lastElementChild.textContent = cfg.live ? cfg.model : "демо-режим";
-    provPaint();
   } catch { /* оставляем как есть */ }
   try { GLOSS = (await loadTheory()).glossary || {}; } catch {}
   themePaint();

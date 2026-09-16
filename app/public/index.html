@@ -14,6 +14,29 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+  <div class="gate-box">
+    <div class="eyebrow">Школа управления СКОЛКОВО · исследовательский прототип</div>
+    <h1 id="gateTitle">Теория парадоксов</h1>
+    <p class="lede">Приложение является исследовательским прототипом научного кружка Школы управления
+      СКОЛКОВО и предоставляется в тестовом режиме «как есть», без гарантий точности и полноты результатов.</p>
+    <ul class="gate-terms">
+      <li>Для обработки запросов используются внешние языковые модели (LLM) сторонних провайдеров.
+        Введённая информация передаётся этим провайдерам и обрабатывается в соответствии с их политиками.
+        Разработчики сайта не контролируют обработку данных на стороне провайдеров и не несут за неё ответственности.</li>
+      <li>Разработчики онлайн-приложения не хранят и не передают описания ваших кейсов без вашего явного согласия.</li>
+      <li>Не вводите конфиденциальную информацию, коммерческую тайну, персональные данные третьих лиц
+        и сведения, идентифицирующие вашу компанию. Ответственность за содержание вводимой информации несёт пользователь.</li>
+      <li>Результаты работы данного приложения носят учебный характер и не являются консультацией
+        или рекомендацией к принятию управленческих решений.</li>
+    </ul>
+    <label class="gate-check">
+      <input type="checkbox" id="gateConsent" checked>
+      <span>Разрешаю анонимно учесть мои ответы для улучшения инструмента</span>
+    </label>
+    <div class="acts"><button class="go" id="gateGo">Начать</button></div>
+  </div>
+</div>
 <div class="shell">
   <aside class="rail">
     <div class="brand">Теория парадоксов<small>Школа управления СКОЛКОВО</small></div>
@@ -28,7 +51,6 @@
         <button data-theme-set="light" title="Светлая тема">Светлая</button>
         <button data-theme-set="dark" title="Тёмная тема">Тёмная</button>
       </div>
-      <div class="seg" id="prov" role="group" aria-label="Модель" hidden></div>
       <span class="chip" id="mode"><b></b><span>—</span></span>
       <button class="back noprint" id="restart" style="padding:0;text-align:left">Новый разбор</button>
     </div>

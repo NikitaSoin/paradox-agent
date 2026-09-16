@@ -51,6 +51,14 @@ process.on("unhandledRejection", r => errors.push("node rejection: " + (r?.messa
 
 await wait(60);
 
+console.log("\n0. Стартовый экран с условиями");
+must(!q("#gate").hidden, "условия показаны при открытии");
+must(q("#gateConsent").checked, "галочка согласия стоит по умолчанию");
+q("#gateConsent").checked = false;
+click(q("#gateGo"));
+must(q("#gate").hidden, "«Начать» закрывает экран");
+must(window.localStorage.getItem("paradox.consent") === "no", "снятая галочка запоминается");
+
 console.log("\n1. Экран входа");
 must(q("#sit"), "поле ввода ситуации");
 q("#sit").value = "Совет требует сократить расходы на 20%, но единственный источник роста — новые продукты, и режем мы их.";

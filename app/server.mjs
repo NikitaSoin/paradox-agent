@@ -158,13 +158,10 @@ const server = createServer(async (req, res) => {
     try {
       if (!hasKey) {
         // Демо-режим: сценарий проигрывается без обращения к модели.
-        for (const line of ["Читаю описание ситуации…", "Сверяю с критериями парадокса…", "Подбираю оси из библиотеки…"]) {
-          send("thinking", { text: line + "\n" });
-          await new Promise(r => setTimeout(r, 450));
-        }
+        await new Promise(r => setTimeout(r, 1400));
         send("done", { data: mockStep(body.step, body.ctx), demo: true });
       } else {
-        const out = await runStep(body.step, body.ctx, (t) => send("thinking", { text: t }), body.provider);
+        const out = await runStep(body.step, body.ctx);
         send("done", { data: out.data, usage: out.usage, provider: out.provider, demo: false });
       }
     } catch (err) {
@@ -204,12 +201,9 @@ server.listen(PORT, () => {
   if (hasKey) {
     console.log(`  Режим: живой агент — ${providerInfo.label} · ${providerInfo.model}` +
       (providerInfo.proxied ? " (через свой шлюз)" : ""));
-    const others = providerInfo.all.filter(p => p.id !== providerInfo.id);
-    if (others.length) console.log(`  Запасной: ${others.map(p => p.label + " · " + p.model).join(", ")}` +
-      "  — переключается через PROVIDER= в .env");
     console.log("");
   } else {
-    console.log("  Режим: ДЕМО (ключей нет — сценарий проигрывается без модели)");
+    console.log("  Режим: ДЕМО (ключа DeepSeek нет — сценарий проигрывается без модели)");
   }
   console.log(ACCESS_CODE
     ? `  Доступ: по коду. Ссылка для участника — <адрес>/?code=${ACCESS_CODE}\n`

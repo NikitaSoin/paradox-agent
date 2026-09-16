@@ -8,9 +8,6 @@
     "start": "node app/server.mjs",
     "test": "node app/test-flow.mjs"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0"
-  },
   "engines": {
     "node": ">=18"
   }

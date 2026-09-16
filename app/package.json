@@ -9,9 +9,6 @@
     "pack": "node pack.mjs",
     "pack:keys": "node pack.mjs --with-keys"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0"
-  },
   "devDependencies": {
     "jsdom": "^30.0.1"
   },

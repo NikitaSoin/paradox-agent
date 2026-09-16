@@ -1,14 +1,13 @@
 import { knowledgeBase, SEGMENTS, POSITIONS } from "./kb/kb.mjs";
-import { pickProvider, listProviders, getProvider } from "./providers.mjs";
+import { pickProvider } from "./providers.mjs";
 
 const KB = knowledgeBase();
 const provider = pickProvider();
 
 export const hasKey = Boolean(provider);
 export const providerInfo = provider
-  ? { id: provider.id, label: provider.label, model: provider.model, proxied: provider.proxied,
-      all: listProviders() }
-  : { id: null, label: null, model: null, proxied: false, all: [] };
+  ? { id: provider.id, label: provider.label, model: provider.model, proxied: provider.proxied }
+  : { id: null, label: null, model: null, proxied: false };
 
 /* ------------------------------- схемы ------------------------------- */
 
@@ -344,13 +343,13 @@ function userTurn(step, ctx, instructions) {
 }
 
 /**
- * Выполняет один шаг агента. onThinking получает краткое резюме рассуждения по мере генерации.
+ * Выполняет один шаг агента.
  * Возвращает разобранный JSON по схеме шага.
  */
-export async function runStep(step, ctx, onThinking = () => {}, providerId = null) {
+export async function runStep(step, ctx) {
   const cfg = STEPS[step];
   if (!cfg) throw new Error(`Неизвестный шаг: ${step}`);
-  const p = (providerId && getProvider(providerId)) || provider;
+  const p = provider;
   if (!p) throw new Error("NO_KEY");
 
   const effort = EFFORT || cfg.effort;
@@ -362,7 +361,6 @@ export async function runStep(step, ctx, onThinking = () => {}, providerId = nul
     schema: cfg.schema,
     maxTokens: cfg.max,
     effort,
-    onThinking,
   });
   return { data: json, usage, provider: info };
 }
