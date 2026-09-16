@@ -2,10 +2,12 @@
  * Приёмник ответов тренажёра «Теория парадоксов» → Google-таблица.
  *
  * Установка (один раз):
- *  1. Создать Google-таблицу. Расширения → Apps Script.
+ *  1. Создать Google-таблицу. Меню «Расширения» → «Apps Script» (англ.: Extensions → Apps Script).
+ *     Нет такого меню — открыть script.google.com → «Новый проект» и заполнить SPREADSHEET_ID ниже.
  *  2. Стереть всё в Code.gs, вставить этот файл целиком.
  *  3. Ниже в SECRET вписать своё слово-пароль (то же — в SHEETS_SECRET на хостинге).
- *  4. Сохранить. Развернуть → Новое развёртывание → тип «Веб-приложение»:
+ *  4. Сохранить. Синяя кнопка «Развернуть» справа вверху → «Новое развертывание» →
+ *     шестерёнка у «Выберите тип» → «Веб-приложение»:
  *       Выполнять от имени — «Я», У кого есть доступ — «Все». Разрешить доступ.
  *  5. Скопировать URL веб-приложения (…/exec) → SHEETS_URL на хостинге.
  *
@@ -17,6 +19,11 @@
  */
 
 const SECRET = "ЗАМЕНИТЕ-НА-СВОЙ-ПАРОЛЬ";
+
+// Нужен, только если скрипт создан отдельно на script.google.com, а не из меню таблицы.
+// Это кусок адреса таблицы между /d/ и /edit:
+// https://docs.google.com/spreadsheets/d/ВОТ_ЭТО/edit
+const SPREADSHEET_ID = "";
 const SHEET_NAME = "Ответы";
 
 // Порядок колонок. Ключ — как присылает сервер, значение — заголовок в таблице.
@@ -86,7 +93,7 @@ function doGet() {
 }
 
 function ensureSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
   const head = sheet.getRange(1, 1, 1, COLUMNS.length);
   const titles = COLUMNS.map(c => c[1]);
