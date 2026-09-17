@@ -70,7 +70,7 @@ const ACCESS_CODE = process.env.ACCESS_CODE || "";
 // Метка версии, чтобы по /api/sheets-check было видно, что хостинг подтянул свежий код.
 const VERSION = "2026-09-17-sheets";
 const SHEETS_URL = process.env.SHEETS_URL ??
-  "https://script.google.com/macros/s/AKfycbxb59Tktz2jnSCJxOCVEhS0qsrWIADKKbHUU7gEUbtMDGZqXW98FMfr9-DI0Wh9GOB0Kg/exec";
+  "https://script.google.com/macros/s/AKfycbxS5uijEorg2nE3w3JjY7o2---TC5zQIWhQeG9LjO_A3gGujJEH7VYMv6zJvA4ALPNPkg/exec";
 const SHEETS_SECRET = process.env.SHEETS_SECRET ?? "Snm081105";
 const COOKIE = "pa_access";
 

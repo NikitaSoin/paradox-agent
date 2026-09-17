@@ -110,10 +110,21 @@ function deepseekProvider() {
             "\nВот что ты вернул:\n" + first.text.slice(0, 4000) +
             "\nВерни исправленный JSON целиком, строго по схеме.",
         });
-        json = parseJson(repair.text);
-        const missing = missingKeys(json, opts.schema);
-        if (missing.length) throw new Error("DeepSeek не заполнил поля: " + missing.join(", "));
-        return { json, usage: repair.usage };
+        const check = (res) => {
+          const j = parseJson(res.text);
+          const miss = missingKeys(j, opts.schema);
+          if (miss.length) throw new Error("DeepSeek не заполнил поля: " + miss.join(", "));
+          return j;
+        };
+        try {
+          return { json: check(repair), usage: repair.usage };
+        } catch (e2) {
+          // Починка тоже не удалась (так бывает с ответом, сломанным в середине длинного текста:
+          // модель видит только его начало). Последняя попытка — заново, с чистого листа.
+          console.error(`[deepseek] починка не удалась: ${e2.message.slice(0, 120)} — пробую заново`);
+          const fresh = await once(opts);
+          return { json: check(fresh), usage: fresh.usage };
+        }
       }
       return { json, usage: first.usage };
     },
