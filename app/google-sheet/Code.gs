@@ -65,6 +65,7 @@ function doPost(e) {
   let data;
   try { data = JSON.parse(e.postData.contents); } catch (err) { return reply({ ok: false, error: "bad json" }); }
   if (data.secret !== SECRET) return reply({ ok: false, error: "forbidden" });
+  if (data.action === "batch") return writeRows(data.records);
   if (data.action === "get") return readRow(data.id);
   if (data.action === "mail") return sendMail(data);
   if (data.action === "store_pdf") return storePdf(data);
@@ -74,23 +75,7 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
-    const sheet = ensureSheet();
-    const rec = data.record;
-    const found = sheet.getRange("A:A").createTextFinder(String(rec.id)).matchEntireCell(true).findNext();
-    const rowIdx = found ? found.getRow() : sheet.getLastRow() + 1;
-    const range = sheet.getRange(rowIdx, 1, 1, COLUMNS.length);
-    const row = found ? range.getValues()[0] : COLUMNS.map(() => "");
-    // Пишем только присланные поля: запись контактов не стирает ответы, и наоборот.
-    COLUMNS.forEach(([key], i) => {
-      if (rec[key] === undefined || rec[key] === null) return;
-      let v = rec[key];
-      if (typeof v === "object") v = JSON.stringify(v);
-      if (typeof v === "string" && v.length > 49000) v = v.slice(0, 49000) + "…"; // лимит ячейки 50 000
-      // Текст, начинающийся с = + - @, таблица приняла бы за формулу.
-      if (typeof v === "string" && /^[=+\-@]/.test(v)) v = "'" + v;
-      row[i] = v;
-    });
-    range.setValues([row]);
+    const rowIdx = writeRow(ensureSheet(), data.record);
     return reply({ ok: true, row: rowIdx });
   } catch (err) {
     // Без этого Google отдаёт вместо ответа HTML-страницу, и причину не видно.
@@ -176,6 +161,49 @@ function authorize() {
   MailApp.getRemainingDailyQuota();
   DriveApp.getRootFolder();
   Logger.log("Разрешения выданы");
+}
+
+// Одна строка разбора: находим по id или добавляем в конец, пишем только присланные поля.
+function writeRow(sheet, rec) {
+  const found = sheet.getRange("A:A").createTextFinder(String(rec.id)).matchEntireCell(true).findNext();
+  const rowIdx = found ? found.getRow() : sheet.getLastRow() + 1;
+  const range = sheet.getRange(rowIdx, 1, 1, COLUMNS.length);
+  const row = found ? range.getValues()[0] : COLUMNS.map(() => "");
+  // Пишем только присланные поля: запись контактов не стирает ответы, и наоборот.
+  COLUMNS.forEach(([key], i) => {
+    if (rec[key] === undefined || rec[key] === null) return;
+    let v = rec[key];
+    if (typeof v === "object") v = JSON.stringify(v);
+    if (typeof v === "string" && v.length > 49000) v = v.slice(0, 49000) + "…"; // лимит ячейки 50 000
+    // Текст, начинающийся с = + - @, таблица приняла бы за формулу.
+    if (typeof v === "string" && /^[=+\-@]/.test(v)) v = "'" + v;
+    row[i] = v;
+  });
+  range.setValues([row]);
+  return rowIdx;
+}
+
+// Пачка строк за один вызов: сервер копит записи и шлёт их вместе, поэтому при
+// одновременной работе десятков людей скрипт вызывается в разы реже.
+function writeRows(records) {
+  if (!records || !records.length) return reply({ ok: false, error: "no records" });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(120000);
+    const sheet = ensureSheet();
+    let written = 0;
+    for (var i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (!rec || !rec.id) continue;
+      writeRow(sheet, rec);
+      written++;
+    }
+    return reply({ ok: true, written: written });
+  } catch (err) {
+    return reply({ ok: false, error: String(err && err.message || err) });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function doGet() {

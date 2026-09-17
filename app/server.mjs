@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -116,6 +117,96 @@ function mailAllowed(ip) {
   return true;
 }
 
+/* ---------------- очереди к Google-скрипту ----------------
+   Скрипт выполняет обращения по очереди и при десятках одновременных теряет часть.
+   Поэтому очередь держим у себя: записи копятся и уходят пачками, PDF — по одному.
+   Участник при этом ничего не ждёт. */
+
+const RECORD_FLUSH_MS = 4000;   // как часто отправлять накопленное
+const RECORD_BATCH = 25;        // сколько строк уходит в одной отправке
+const sheetQueue = new Map();   // id разбора -> последняя версия строки
+let flushTimer = null, flushing = false;
+
+function queueRecord(record) {
+  sheetQueue.set(record.id, record); // несколько обновлений одного разбора схлопываются в одно
+  if (!flushTimer) flushTimer = setTimeout(flushRecords, RECORD_FLUSH_MS);
+}
+
+async function callScript(payload, { tries = 2, timeout = 90000 } = {}) {
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const r = await fetch(SHEETS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: SHEETS_SECRET, ...payload }), signal: AbortSignal.timeout(timeout) });
+      const text = await r.text();
+      try { if (JSON.parse(text).ok === true) return true; } catch {}
+      console.error(`[sheets] ${payload.action || "record"} не прошло (попытка ${attempt}): ${r.status} ` +
+        text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 160));
+    } catch (e) {
+      console.error(`[sheets] ${payload.action || "record"} нет связи (попытка ${attempt}):`, e?.cause?.code || e?.message || e);
+    }
+  }
+  return false;
+}
+
+async function flushRecords() {
+  flushTimer = null;
+  if (flushing || !sheetQueue.size) return;
+  flushing = true;
+  try {
+    while (sheetQueue.size) {
+      const batch = [...sheetQueue.values()].slice(0, RECORD_BATCH);
+      for (const r of batch) sheetQueue.delete(r.id);
+      let ok = await callScript({ action: "batch", records: batch });
+      if (!ok) {
+        // Скрипт в таблице может быть старой версии, без пакетной записи —
+        // тогда отправляем строки по одной, как раньше.
+        console.error("[sheets] пробую по одной записи");
+        ok = true;
+        for (const rec of batch) if (!await callScript({ record: rec }, { tries: 1 })) ok = false;
+      }
+      if (!ok) {
+        // Не дошло — возвращаем в очередь то, что не успели переписать новыми версиями.
+        for (const r of batch) if (!sheetQueue.has(r.id)) sheetQueue.set(r.id, r);
+        break;
+      }
+    }
+  } finally {
+    flushing = false;
+    if (sheetQueue.size && !flushTimer) flushTimer = setTimeout(flushRecords, RECORD_FLUSH_MS);
+  }
+}
+
+// PDF тяжёлые: держим их не в памяти, а во временных файлах, и отправляем по одному.
+const pdfQueue = [];
+let pdfWorking = false;
+const PDF_QUEUE_MAX = 200;
+
+function queuePdf(job) {
+  if (pdfQueue.length >= PDF_QUEUE_MAX) { console.error("[pdf-store] очередь переполнена, файл пропущен"); return false; }
+  pdfQueue.push(job);
+  if (!pdfWorking) pdfWorker();
+  return true;
+}
+
+async function pdfWorker() {
+  pdfWorking = true;
+  try {
+    while (pdfQueue.length) {
+      const job = pdfQueue.shift();
+      try {
+        const pdf = await readFile(job.file, "utf8");
+        await callScript({ action: "store_pdf", id: job.id, filename: job.filename, pdf }, { tries: 3 });
+      } catch (e) {
+        console.error("[pdf-store] сбой:", e?.message || e);
+      } finally {
+        rm(job.file, { force: true }).catch(() => {});
+      }
+    }
+  } finally {
+    pdfWorking = false;
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -198,27 +289,21 @@ const server = createServer(async (req, res) => {
     const id = String(body?.id || ""), pdf = String(body?.pdf || "");
     if (!/^[\w-]{6,80}$/.test(id) || !pdf || pdf.length > 12_000_000 || !/^[A-Za-z0-9+/=]+$/.test(pdf)) return json(400, { ok: false });
     if (!SHEETS_URL) return json(204, { ok: false });
-    const payload = JSON.stringify({ secret: SHEETS_SECRET, action: "store_pdf", id, pdf,
-      filename: String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) });
-    // Повтор безопасен: скрипт заменяет прежний файл этого разбора. Первое обращение
-    // после простоя бывает медленным и падает — поэтому две попытки.
-    let ok = false;
-    for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
-      try {
-        const r = await fetch(SHEETS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
-          body: payload, signal: AbortSignal.timeout(90000) });
-        const text = await r.text();
-        try { ok = JSON.parse(text).ok === true; } catch { ok = false; }
-        if (!ok) console.error(`[pdf-store] не сохранилось (попытка ${attempt}): ${r.status} ${text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 200)}`);
-      } catch (e) {
-        console.error(`[pdf-store] нет связи (попытка ${attempt}):`, e?.cause?.code || e?.message || e);
-      }
+    const filename = String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120);
+    // Файл кладём на диск и ставим в очередь: отправляем по одному в фоне, чтобы
+    // десятки файлов разом не забили ни скрипт, ни память сервера.
+    try {
+      const file = join(tmpdir(), `paradox-${id}-${Date.now()}.b64`);
+      await writeFile(file, pdf, "utf8");
+      if (!queuePdf({ id, filename, file })) { await rm(file, { force: true }); return json(503, { ok: false }); }
+      return json(202, { ok: true, queued: true });
+    } catch (e) {
+      console.error("[pdf-store] не сохранился во временный файл:", e?.message || e);
+      return json(500, { ok: false });
     }
-    return json(ok ? 200 : 502, { ok });
   }
 
-  // Самопроверка связи с таблицей: открыть в браузере /api/sheets-check.
-  // Ничего не пишет — только спрашивает скрипт «ты жив?».
+
   if (url.pathname === "/api/sheets-check") {
     const out = { version: VERSION, configured: Boolean(SHEETS_URL), reachable: false, answer: null, error: null };
     if (SHEETS_URL) {
@@ -242,26 +327,13 @@ const server = createServer(async (req, res) => {
     const record = body?.record;
     if (!record?.id || JSON.stringify(record).length > 300000) { res.writeHead(400); return res.end("bad record"); }
     if (!SHEETS_URL) { res.writeHead(204); return res.end(); }
-    // Скрипт Google после простоя просыпается 10–30 секунд — ждём долго и пробуем дважды.
-    let ok = false;
-    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
-      try {
-        const r = await fetch(SHEETS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret: SHEETS_SECRET, record }),
-          signal: AbortSignal.timeout(45000),
-        });
-        const text = await r.text();
-        try { ok = r.ok && JSON.parse(text).ok === true; } catch { ok = false; }
-        if (!ok) console.error(`[sheets] запись не прошла (попытка ${attempt}): ${r.status} ${text.slice(0, 200)}`);
-      } catch (e) {
-        console.error(`[sheets] нет связи (попытка ${attempt}):`, e?.cause?.code || e?.message || e);
-      }
-    }
-    res.writeHead(ok ? 200 : 502, { "Content-Type": MIME[".json"] });
-    return res.end(JSON.stringify({ ok }));
+    // Не ждём Google: кладём в очередь и сразу отвечаем. Иначе на презентации,
+    // где десятки человек идут по шагам одновременно, скрипт становится узким местом.
+    queueRecord(record);
+    res.writeHead(202, { "Content-Type": MIME[".json"] });
+    return res.end(JSON.stringify({ ok: true, queued: true }));
   }
+
 
   if (url.pathname === "/api/theory") {
     res.writeHead(200, { "Content-Type": MIME[".json"] });
