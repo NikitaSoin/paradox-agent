@@ -198,20 +198,23 @@ const server = createServer(async (req, res) => {
     const id = String(body?.id || ""), pdf = String(body?.pdf || "");
     if (!/^[\w-]{6,80}$/.test(id) || !pdf || pdf.length > 12_000_000 || !/^[A-Za-z0-9+/=]+$/.test(pdf)) return json(400, { ok: false });
     if (!SHEETS_URL) return json(204, { ok: false });
-    try {
-      const r = await fetch(SHEETS_URL, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: SHEETS_SECRET, action: "store_pdf", id, pdf,
-          filename: String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) }),
-        signal: AbortSignal.timeout(60000),
-      });
-      const out = JSON.parse(await r.text());
-      if (!out.ok) console.error("[pdf-store] скрипт ответил:", out.error);
-      return json(out.ok ? 200 : 502, { ok: Boolean(out.ok) });
-    } catch (e) {
-      console.error("[pdf-store] нет связи:", e?.message || e);
-      return json(502, { ok: false });
+    const payload = JSON.stringify({ secret: SHEETS_SECRET, action: "store_pdf", id, pdf,
+      filename: String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) });
+    // Повтор безопасен: скрипт заменяет прежний файл этого разбора. Первое обращение
+    // после простоя бывает медленным и падает — поэтому две попытки.
+    let ok = false;
+    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+      try {
+        const r = await fetch(SHEETS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: payload, signal: AbortSignal.timeout(60000) });
+        const text = await r.text();
+        try { ok = JSON.parse(text).ok === true; } catch { ok = false; }
+        if (!ok) console.error(`[pdf-store] не сохранилось (попытка ${attempt}): ${r.status} ${text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 200)}`);
+      } catch (e) {
+        console.error(`[pdf-store] нет связи (попытка ${attempt}):`, e?.cause?.code || e?.message || e);
+      }
     }
+    return json(ok ? 200 : 502, { ok });
   }
 
   // Самопроверка связи с таблицей: открыть в браузере /api/sheets-check.
