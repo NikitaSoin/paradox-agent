@@ -203,10 +203,10 @@ const server = createServer(async (req, res) => {
     // Повтор безопасен: скрипт заменяет прежний файл этого разбора. Первое обращение
     // после простоя бывает медленным и падает — поэтому две попытки.
     let ok = false;
-    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+    for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
       try {
         const r = await fetch(SHEETS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
-          body: payload, signal: AbortSignal.timeout(60000) });
+          body: payload, signal: AbortSignal.timeout(90000) });
         const text = await r.text();
         try { ok = JSON.parse(text).ok === true; } catch { ok = false; }
         if (!ok) console.error(`[pdf-store] не сохранилось (попытка ${attempt}): ${r.status} ${text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 200)}`);

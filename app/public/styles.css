@@ -621,6 +621,20 @@ input[type=range]::-moz-range-thumb{background:var(--brand)}
   .sheet-score b{color:#000}
 }
 
+/* Разбор целиком в PDF: шапка, каждый шаг с новой страницы, без кнопок и подсказок */
+.pdf-archive{padding:0 4px}
+.pdf-head h1{font-size:1.3rem}
+.pdf-head p{color:var(--ink-3); font-size:.82rem; margin-top:6px}
+.pdf-step{padding-top:10px}
+.pdf-step.brk{break-before:page; page-break-before:always}
+.pdf-step-h{font-weight:800; text-transform:uppercase; letter-spacing:.08em; font-size:.7rem;
+  color:var(--brand); border-bottom:2px solid var(--brand); padding-bottom:6px; margin-bottom:16px}
+.pdf-archive .acts,.pdf-archive .steps,.pdf-archive .noprint,.pdf-archive .i,.pdf-archive .more,
+.pdf-archive details.example,.pdf-archive .think,.pdf-archive button.icon,
+.pdf-archive .pick[aria-pressed="false"],.pdf-archive .plane-hint{display:none!important}
+.pdf-archive .pick{border-color:var(--brand)}
+.pdf-archive .sheet{border:1px solid var(--line); padding:18px}
+
 /* Карта внутри фрейма для PDF */
 .pdf-body{background:#fff; margin:0; padding:0}
 .pdf-body .sheet{border:0; padding:0; box-shadow:none}

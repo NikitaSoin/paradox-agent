@@ -836,7 +836,7 @@ function sheetIntro() {
 // а прокрутка основной страницы не даёт пустых листов.
 let pdfBusy = false;
 
-function pdfFrame(sheetHtml) {
+function pdfFrame(innerHtml, bodyClass = "pdf-body") {
   return new Promise((resolve, reject) => {
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
@@ -856,35 +856,62 @@ function pdfFrame(sheetHtml) {
     };
     frame.srcdoc = `<!doctype html><html lang="ru" data-theme="light"><head><meta charset="utf-8">
       ${fonts}<link rel="stylesheet" href="/styles.css"></head>
-      <body class="pdf-body">${sheetHtml}<script src="/vendor/html2pdf.bundle.min.js"><\/script></body></html>`;
+      <body class="${bodyClass}">${innerHtml}<script src="/vendor/html2pdf.bundle.min.js"><\/script></body></html>`;
   });
 }
 
-/** Собирает PDF текущей карты. Возвращает Blob или бросает ошибку. */
-async function pdfBlob() {
+const STEP_TITLE = {
+  input: "Шаг 1 · Ситуация", questions: "Шаг 2 · Уточняющие вопросы",
+  readings: "Шаг 3 · Три прочтения и названный тип", axis: "Шаг 4 · Оси натяжения",
+  decide: "Шаг 5 · Направления решений", sheet: "Итоговая карта",
+};
+
+/** Весь разбор в одном документе: каждый пройденный шаг, в конце — карта.
+ *  Такой файл уходит только в архив на Диске; участник скачивает и получает почтой карту. */
+function pdfArchiveHtml() {
+  const was = S.step;
+  const head = `<div class="pdf-head"><h1>Теория парадоксов — разбор целиком</h1>
+    <p>${esc(new Date().toLocaleString("ru-RU"))}${S.industry ? " · " + esc(S.industry) : ""}${S.role ? " · " + esc(S.role) : ""}</p></div>`;
+  try {
+    return head + browsableSteps().map((step, i) => {
+      S.step = step;
+      return `<section class="pdf-step${i ? " brk" : ""}">
+        <div class="pdf-step-h">${esc(STEP_TITLE[step] || step)}</div>${stepMarkup()}</section>`;
+    }).join("");
+  } finally {
+    S.step = was;
+  }
+}
+
+/** Собирает PDF. mode «sheet» — только карта (участнику), «all» — весь разбор (в архив). */
+async function pdfBlob(mode = "sheet") {
   if (window.__PDF_OFF) throw new Error("PDF отключён"); // для прогона в jsdom
   const sheet = $(".sheet");
   if (!sheet) throw new Error("карта не открыта");
-  const frame = await pdfFrame(sheet.outerHTML);
+  const all = mode === "all";
+  const frame = await pdfFrame(all ? pdfArchiveHtml() : sheet.outerHTML, all ? "pdf-body pdf-archive" : "pdf-body");
   try {
     const w = frame.contentWindow;
     // Настройки собираем в «мире» фрейма: библиотека проверяет массивы через instanceof,
     // а массив из основной страницы для фрейма — чужой, и она его отвергает.
     const opts = w.JSON.parse(JSON.stringify({
       margin: [10, 10, 12, 10],
-      image: { type: "jpeg", quality: 0.93 },
-      html2canvas: { scale: 2, backgroundColor: "#ffffff" },
+      image: { type: "jpeg", quality: all ? 0.8 : 0.93 },
+      html2canvas: { scale: all ? 1.25 : 2, backgroundColor: "#ffffff" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"], avoid: [".sheet-h", ".sheet-intro", ".pole", ".axgroup", ".plane-wrap", ".beam-track", ".meta > div", ".qs li", ".sect > p"] },
+      pagebreak: { mode: ["css", "legacy"], before: [".pdf-step.brk"],
+        avoid: [".sheet-h", ".sheet-intro", ".pole", ".axgroup", ".plane-wrap", ".beam-track", ".meta > div", ".qs li", ".sect > p", ".card", ".reading"] },
     }));
     opts.html2canvas.ignoreElements = (el) => el.classList?.contains("noprint");
-    return await w.html2pdf().set(opts).from(w.document.querySelector(".sheet")).outputPdf("blob");
+    const from = all ? w.document.body : w.document.querySelector(".sheet");
+    return await w.html2pdf().set(opts).from(from).outputPdf("blob");
   } finally {
     frame.remove();
   }
 }
 
-const pdfName = () => `Теория-парадоксов-карта-${new Date().toLocaleDateString("ru-RU").replaceAll(".", "-")}.pdf`;
+const pdfName = (base = "Теория-парадоксов-карта") =>
+  `${base}-${new Date().toLocaleDateString("ru-RU").replaceAll(".", "-")}.pdf`;
 
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
@@ -922,10 +949,10 @@ async function pdfStore() {
   try {
     await new Promise(r => setTimeout(r, 600)); // дать карте отрисоваться
     if (S.step !== "sheet" || S.runId !== id) { pdfStoredFor = null; return; }
-    const pdf = await blobToBase64(await pdfBlob());
+    const pdf = await blobToBase64(await pdfBlob("all"));
     const r = await fetch("/api/pdf-store", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, filename: pdfName(), pdf }),
+      body: JSON.stringify({ id, filename: pdfName("Теория-парадоксов-разбор"), pdf }),
     });
     if (!r.ok) pdfStoredFor = null;
   } catch (e) {
