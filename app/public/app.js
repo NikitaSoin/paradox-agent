@@ -372,7 +372,8 @@ function viewInput() {
     </div>
     <textarea id="sit" rows="9" placeholder="Опишите ситуацию своими словами. Чем подробнее вы её опишете, тем полнее будет диагностика. Дальше мы зададим уточняющие вопросы, чтобы точнее определить тип вашей ситуации. Без названий компаний и людей — они не нужны.">${esc(S.situation)}</textarea>
     <details class="card flat example">
-      <summary>Пример — так это выглядит в готовом виде</summary>
+      <summary><span class="ex-label">Посмотреть пример</span>
+        <span class="ex-preview">Мы — розничная сеть в нескольких регионах. Закупки и ассортимент исторически ведёт центр…</span></summary>
       <p>Мы — розничная сеть в нескольких регионах. Закупки и ассортимент исторически ведёт центр:
       это даёт объёмные скидки у поставщиков и единый стандарт качества. За последний год мы открыли
       восемь новых точек, центр перестал успевать согласовывать ассортимент, а региональные директора
@@ -829,7 +830,10 @@ function pdfFrame(sheetHtml) {
     frame.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;height:1200px;border:0;visibility:hidden";
     document.body.appendChild(frame);
     const fonts = document.querySelector('link[href*="fonts.googleapis"]')?.outerHTML || "";
+    // Не дождались за 30 секунд (медленный телефон, не загрузилась библиотека) — сдаёмся.
+    const timer = setTimeout(() => { frame.remove(); reject(new Error("PDF: таймаут")); }, 30000);
     frame.onload = async () => {
+      clearTimeout(timer);
       try {
         const w = frame.contentWindow;
         if (!w.html2pdf) throw new Error("нет библиотеки");
@@ -843,14 +847,13 @@ function pdfFrame(sheetHtml) {
   });
 }
 
-async function pdfSave() {
+/** Собирает PDF текущей карты. Возвращает Blob или бросает ошибку. */
+async function pdfBlob() {
+  if (window.__PDF_OFF) throw new Error("PDF отключён"); // для прогона в jsdom
   const sheet = $(".sheet");
-  if (!sheet || pdfBusy) return;
-  const html = sheet.outerHTML;
-  pdfBusy = true; S.error = null; render();
-  let frame = null;
+  if (!sheet) throw new Error("карта не открыта");
+  const frame = await pdfFrame(sheet.outerHTML);
   try {
-    frame = await pdfFrame(html);
     const w = frame.contentWindow;
     // Настройки собираем в «мире» фрейма: библиотека проверяет массивы через instanceof,
     // а массив из основной страницы для фрейма — чужой, и она его отвергает.
@@ -862,19 +865,59 @@ async function pdfSave() {
       pagebreak: { mode: ["css", "legacy"], avoid: [".sheet-h", ".sheet-intro", ".pole", ".axgroup", ".plane-wrap", ".beam-track", ".meta > div", ".qs li", ".sect > p"] },
     }));
     opts.html2canvas.ignoreElements = (el) => el.classList?.contains("noprint");
-    const blob = await w.html2pdf().set(opts).from(w.document.querySelector(".sheet")).outputPdf("blob");
-    const date = new Date().toLocaleDateString("ru-RU").replaceAll(".", "-");
+    return await w.html2pdf().set(opts).from(w.document.querySelector(".sheet")).outputPdf("blob");
+  } finally {
+    frame.remove();
+  }
+}
+
+const pdfName = () => `Теория-парадоксов-карта-${new Date().toLocaleDateString("ru-RU").replaceAll(".", "-")}.pdf`;
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(",")[1] || "");
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function pdfSave() {
+  if (pdfBusy) return;
+  pdfBusy = true; S.error = null; render();
+  try {
+    const blob = await pdfBlob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `Теория-парадоксов-карта-${date}.pdf`;
+    a.href = url; a.download = pdfName();
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (e) {
     console.error("[pdf]", e);
     S.error = "Не получилось собрать PDF. Попробуйте ещё раз или отправьте карту на почту.";
   } finally {
-    frame?.remove();
     pdfBusy = false; render();
+  }
+}
+
+/** Копия PDF для исследователей — на Google Диск, только с согласия участника. Тихо, в фоне. */
+let pdfStoredFor = null;
+async function pdfStore() {
+  if (S.browse || !S.consent || !S.runId || pdfStoredFor === S.runId) return;
+  const id = S.runId;
+  pdfStoredFor = id;
+  try {
+    await new Promise(r => setTimeout(r, 600)); // дать карте отрисоваться
+    if (S.step !== "sheet" || S.runId !== id) { pdfStoredFor = null; return; }
+    const pdf = await blobToBase64(await pdfBlob());
+    const r = await fetch("/api/pdf-store", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, filename: pdfName(), pdf }),
+    });
+    if (!r.ok) pdfStoredFor = null;
+  } catch (e) {
+    console.error("[pdf-store]", e);
+    pdfStoredFor = null;
   }
 }
 
@@ -885,7 +928,7 @@ const mail = { open: false, to: "", sending: false, sent: "", error: null };
 function mailCard() {
   if (!mail.open) return "";
   if (mail.sent) return `<div class="card hl noprint" style="margin-top:24px"><div class="k">Отправлено</div>
-    <p>Карта ушла на ${esc(mail.sent)}. Если письма нет пару минут — загляните в «Спам».</p></div>`;
+    <p>Карта ушла на ${esc(mail.sent)} — текстом в письме и файлом PDF во вложении. Если письма нет пару минут — загляните в «Спам».</p></div>`;
   return `<div class="card noprint mailcard" style="margin-top:24px">
     <div class="k">Отправить карту на почту</div>
     <label class="f"><b>Email</b>
@@ -929,9 +972,12 @@ async function mailSend() {
   if (!/^\S+@\S+\.\S+$/.test(to)) { mail.error = "Проверьте адрес почты."; render(); return; }
   mail.error = null; mail.sending = true; render();
   try {
+    // PDF — во вложение. Если собрать не вышло, письмо всё равно уходит текстом.
+    let pdf = "";
+    try { pdf = await blobToBase64(await pdfBlob()); } catch (e) { console.error("[mail-pdf]", e); }
     const r = await fetch("/api/mail", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, text: sheetPlainText() }),
+      body: JSON.stringify({ to, text: sheetPlainText(), pdf, filename: pdfName() }),
     });
     const out = await r.json().catch(() => ({}));
     mail.sending = false;
@@ -1389,7 +1435,8 @@ document.addEventListener("click", async (e) => {
 
   if (e.target.closest("#tosheet")) {
     const f = $("#first"); if (f) S.firstStep = f.value.trim();
-    S.step = "sheet"; histUpsert("sheet"); render(); window.scrollTo({ top: 0 }); return;
+    S.step = "sheet"; histUpsert("sheet"); render(); window.scrollTo({ top: 0 });
+    pdfStore(); return;
   }
 });
 

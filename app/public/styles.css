@@ -512,7 +512,12 @@ details.case .body{margin-top:9px; font-size:.86rem; color:var(--ink-2)}
 
 /* Пример заполнения на первом шаге — виден постоянно, а не только пока поле пустое. */
 .example{background:var(--sunk); border-style:dashed}
-.example summary{cursor:pointer; font-weight:600; color:var(--ink-2); list-style:none; display:flex; align-items:center; gap:8px}
+.example summary{cursor:pointer; font-weight:600; color:var(--ink-2); list-style:none; display:grid;
+  grid-template-columns:20px minmax(0,1fr); column-gap:8px; row-gap:4px; align-items:center}
+.example .ex-label{color:var(--brand)}
+.example .ex-preview{grid-column:2; font-weight:400; font-size:.9rem; color:var(--ink-3); font-style:italic;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.example[open] .ex-preview{display:none}
 .example summary::-webkit-details-marker{display:none}
 .example summary::before{content:"+"; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; flex:0 0 20px; border-radius:4px; background:var(--brand); color:var(--on-brand); font-weight:700}
 .example[open] summary::before{content:"–"}

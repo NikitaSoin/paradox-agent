@@ -13,6 +13,7 @@ global.Node = window.Node; global.TextDecoder = TextDecoder;
 window.scrollTo = () => {};
 window.confirm = () => true;
 window.print = () => {};
+window.__PDF_OFF = true; // в jsdom нет отрисовки — PDF не собрать
 
 // Заглушка сети: /api/config, /api/theory и SSE-поток /api/step из демо-данных.
 let apiCalls = 0, lastCtx = null; const records = []; const mails = []; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
@@ -63,6 +64,7 @@ must(window.localStorage.getItem("paradox.consent") === "no", "снятая га
 
 console.log("\n1. Экран входа");
 must(q("details.example") && !q("details.example").open, "пример на шаге 1 свёрнут");
+must(q("details.example summary").textContent.includes("Посмотреть пример") && q(".ex-preview").textContent.startsWith("Мы — розничная сеть"), "в свёрнутом примере видна подпись и первая строка кейса");
 must(q("#sit"), "поле ввода ситуации");
 q("#sit").value = "Совет требует сократить расходы на 20%, но единственный источник роста — новые продукты, и режем мы их.";
 q("#industry").value = "Розничная торговля";

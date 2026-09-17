@@ -55,7 +55,11 @@ const COLUMNS = [
   ["position", "Должность (контакты)"],
   ["email", "Email"],
   ["restated_user", "Ситуация одной фразой (поправил участник)"],
+  ["pdf_url", "PDF карты"],
 ];
+
+// Папка на Google Диске владельца скрипта, куда складываются PDF карт.
+const PDF_FOLDER = "Теория парадоксов — карты";
 
 function doPost(e) {
   let data;
@@ -63,6 +67,7 @@ function doPost(e) {
   if (data.secret !== SECRET) return reply({ ok: false, error: "forbidden" });
   if (data.action === "get") return readRow(data.id);
   if (data.action === "mail") return sendMail(data);
+  if (data.action === "store_pdf") return storePdf(data);
   if (data.action === "last") return readLast(Number(data.n) || 3);
   if (!data.record || !data.record.id) return reply({ ok: false, error: "no id" });
 
@@ -100,11 +105,46 @@ function sendMail(data) {
   try {
     if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(data.to || ""))) return reply({ ok: false, error: "bad email" });
     if (MailApp.getRemainingDailyQuota() < 1) return reply({ ok: false, error: "quota" });
-    MailApp.sendEmail({ to: data.to, subject: String(data.subject || "Теория парадоксов"),
-      body: String(data.body || "").slice(0, 60000), name: "Теория парадоксов · СКОЛКОВО" });
+    const msg = { to: data.to, subject: String(data.subject || "Теория парадоксов"),
+      body: String(data.body || "").slice(0, 60000), name: "Теория парадоксов · СКОЛКОВО" };
+    if (data.pdf) msg.attachments = [pdfBlob(data.pdf, data.filename)];
+    MailApp.sendEmail(msg);
     return reply({ ok: true });
   } catch (err) {
     return reply({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+function pdfBlob(base64, filename) {
+  return Utilities.newBlob(Utilities.base64Decode(base64), "application/pdf", String(filename || "karta.pdf"));
+}
+
+// Копия PDF в папку на Диске; ссылка — в строку разбора. Повторная карта того же разбора
+// заменяет прежний файл, а не копится рядом.
+function storePdf(data) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    const id = String(data.id || "");
+    if (!id || !data.pdf) return reply({ ok: false, error: "no data" });
+    const folders = DriveApp.getFoldersByName(PDF_FOLDER);
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(PDF_FOLDER);
+    const name = id + " · " + String(data.filename || "karta.pdf");
+    const old = folder.searchFiles("title contains '" + id.replace(/'/g, "") + "'");
+    while (old.hasNext()) old.next().setTrashed(true);
+    const file = folder.createFile(pdfBlob(data.pdf, name));
+
+    const sheet = ensureSheet();
+    const found = sheet.getRange("A:A").createTextFinder(id).matchEntireCell(true).findNext();
+    if (found) {
+      const col = COLUMNS.findIndex(c => c[0] === "pdf_url") + 1;
+      sheet.getRange(found.getRow(), col).setValue(file.getUrl());
+    }
+    return reply({ ok: true, url: file.getUrl() });
+  } catch (err) {
+    return reply({ ok: false, error: String(err && err.message || err) });
+  } finally {
+    lock.releaseLock();
   }
 }
 

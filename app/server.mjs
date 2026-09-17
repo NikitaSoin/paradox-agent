@@ -168,6 +168,8 @@ const server = createServer(async (req, res) => {
     let body;
     try { body = await readBody(req); } catch { return json(400, { ok: false, error: "Некорректный запрос" }); }
     const to = String(body?.to || "").trim(), text = String(body?.text || "");
+    const pdf = typeof body?.pdf === "string" && /^[A-Za-z0-9+/=]*$/.test(body.pdf) && body.pdf.length < 12_000_000 ? body.pdf : "";
+    const filename = String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120);
     if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(to) || to.length > 200) return json(400, { ok: false, error: "Проверьте адрес почты." });
     if (!text || text.length > 60000) return json(400, { ok: false, error: "Нечего отправлять" });
     if (!SHEETS_URL) return json(503, { ok: false, error: "Отправка почты не настроена." });
@@ -176,7 +178,7 @@ const server = createServer(async (req, res) => {
     try {
       const r = await fetch(SHEETS_URL, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: SHEETS_SECRET, action: "mail", to, subject: "Теория парадоксов — ваша карта", body: text }),
+        body: JSON.stringify({ secret: SHEETS_SECRET, action: "mail", to, subject: "Теория парадоксов — ваша карта", body: text, pdf, filename }),
         signal: AbortSignal.timeout(45000),
       });
       const out = JSON.parse(await r.text());
@@ -185,6 +187,30 @@ const server = createServer(async (req, res) => {
     } catch (e) {
       console.error("[mail] нет связи:", e?.message || e);
       return json(502, { ok: false, error: "Не получилось отправить. Попробуйте чуть позже." });
+    }
+  }
+
+  // Копия PDF карты — в папку на Google Диске владельца скрипта, ссылка — в строку разбора.
+  if (url.pathname === "/api/pdf-store" && req.method === "POST") {
+    const json = (code, obj) => { res.writeHead(code, { "Content-Type": MIME[".json"] }); res.end(JSON.stringify(obj)); };
+    let body;
+    try { body = await readBody(req); } catch { return json(400, { ok: false }); }
+    const id = String(body?.id || ""), pdf = String(body?.pdf || "");
+    if (!/^[\w-]{6,80}$/.test(id) || !pdf || pdf.length > 12_000_000 || !/^[A-Za-z0-9+/=]+$/.test(pdf)) return json(400, { ok: false });
+    if (!SHEETS_URL) return json(204, { ok: false });
+    try {
+      const r = await fetch(SHEETS_URL, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: SHEETS_SECRET, action: "store_pdf", id, pdf,
+          filename: String(body?.filename || "karta.pdf").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const out = JSON.parse(await r.text());
+      if (!out.ok) console.error("[pdf-store] скрипт ответил:", out.error);
+      return json(out.ok ? 200 : 502, { ok: Boolean(out.ok) });
+    } catch (e) {
+      console.error("[pdf-store] нет связи:", e?.message || e);
+      return json(502, { ok: false });
     }
   }
 
