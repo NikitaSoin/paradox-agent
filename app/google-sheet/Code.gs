@@ -169,6 +169,15 @@ function readLast(n) {
   return reply({ ok: true, rows: values.map((v, i) => ({ row: from + i, record: rowToObject(v) })) });
 }
 
+// Запустите один раз вручную из редактора (выберите authorize в списке функций → «Выполнить»),
+// чтобы Google спросил все разрешения сразу: таблица, почта, Диск.
+function authorize() {
+  SpreadsheetApp.getActiveSpreadsheet() || (SPREADSHEET_ID && SpreadsheetApp.openById(SPREADSHEET_ID));
+  MailApp.getRemainingDailyQuota();
+  DriveApp.getRootFolder();
+  Logger.log("Разрешения выданы");
+}
+
 function doGet() {
   return reply({ ok: true, service: "paradox-sheet" });
 }

@@ -329,6 +329,9 @@ const STEP_DILEMMA = `ЗАДАЧА ЭТОГО ШАГА — работа с ди�
 const EFFORT = process.env.EFFORT || null;
 // READ_MODE=full возвращает шаг 1 к прежнему виду: рассуждения и полный ответ.
 const READ_MODE = process.env.READ_MODE || "lite";
+// Рассуждения (thinking) — по шагам, по замеру 17.09.2026 на четырёх ситуациях:
+// шаг 3 (refine) без них ошибается в типе (сломанную CRM называл парадоксом) и в положении
+// на оси — оставляем; шаг 1 и шаги решений без них не хуже, но в 2–3 раза быстрее.
 const STEPS = {
   // 18000, не 12000: у DeepSeek размышления иногда съедают 5-6 тысяч токенов ещё до
   // ответа, и на 12000 модель изредка выжирала весь лимит и возвращала пустой JSON.
@@ -336,9 +339,9 @@ const STEPS = {
     ? { schema: READ_SCHEMA, instructions: STEP_READ, max: 18000, effort: "medium" }
     : { schema: READ_SCHEMA_LITE, instructions: STEP_READ_LITE, max: 12000, effort: "medium", thinking: false },
   refine: { schema: REFINE_SCHEMA, instructions: STEP_REFINE, max: 20000, effort: "medium" },
-  decide_paradox: { schema: DECIDE_PARADOX, instructions: STEP_PARADOX, max: 16000, effort: "medium" },
-  decide_problem: { schema: DECIDE_PROBLEM, instructions: STEP_PROBLEM, max: 8000, effort: "low" },
-  decide_dilemma: { schema: DECIDE_DILEMMA, instructions: STEP_DILEMMA, max: 8000, effort: "low" },
+  decide_paradox: { schema: DECIDE_PARADOX, instructions: STEP_PARADOX, max: 16000, effort: "medium", thinking: false },
+  decide_problem: { schema: DECIDE_PROBLEM, instructions: STEP_PROBLEM, max: 8000, effort: "low", thinking: false },
+  decide_dilemma: { schema: DECIDE_DILEMMA, instructions: STEP_DILEMMA, max: 8000, effort: "low", thinking: false },
 };
 
 /* ------------------------------- запуск ------------------------------ */
