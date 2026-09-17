@@ -97,7 +97,7 @@ function histUpsert(stage) {
     updated: Date.now(),
     stage,
     demo: !S.live,
-    situation: S.situation, industry: S.industry, role: S.role,
+    situation: S.situation, industry: S.industry, role: S.role, restatedUser: S.restatedUser,
     restated: S.read.restated,
     guess: S.refine?.hypothesis?.type || null,
     chosenType: S.chosenType,
@@ -132,6 +132,7 @@ function sheetRecord(e) {
     stage: e.stage, demo: e.demo ? "да" : "нет", consent: S.consent ? "да" : "нет",
     industry: S.industry, role: S.role, situation: S.situation,
     restated: S.read?.restated || "",
+    restated_user: S.restatedUser || "",
     challenges: (S.read?.challenges || []).map(c => `${c.primary ? "★ " : ""}${c.title} — ${RU[c.type] || c.type}`).join("\n"),
     hypothesis: h ? `${RU[h.type] || h.type} (${Math.round((h.confidence || 0) * 100)}%): ${h.why}` : "",
     answers, extra: S.extra,
@@ -196,7 +197,8 @@ function histOpen(id) {
   if (!e) return;
   const step = LEGACY_STEP[e.stage] || e.stage || "questions";
   Object.assign(S, {
-    runId: e.id, situation: e.situation, industry: e.industry || "", role: e.role || "", read: e.read, refine: e.refine, decide: e.decide,
+    runId: e.id, situation: e.situation, industry: e.industry || "", role: e.role || "",
+    restatedUser: e.restatedUser || "", editRestated: false, goDecide: false, read: e.read, refine: e.refine, decide: e.decide,
     answers: e.answers || {}, free: e.free || {}, extra: e.extra || "", chosenType: e.chosenType, axisIndex: e.axisIndex ?? 0,
     positions: e.positions || (e.position != null ? [e.position] : (e.refine?.axes || []).map(a => a.position?.value ?? 50)),
     // Старые записи хранили один подход в approachId — поднимаем его в список.
@@ -238,6 +240,7 @@ function browseNav() {
 
 const S = {
   live: false, step: "input", situation: "", industry: "", role: "", runId: null,
+  restatedUser: "", editRestated: false, goDecide: false,
   read: null, answers: {}, free: {}, extra: "", refine: null,
   chosenType: null, axisIndex: 0, positions: [], decideRequested: false, browse: false,
   decide: null, approachIds: [], firstStep: "", error: null, busy: false, savedNote: null,
@@ -280,7 +283,7 @@ async function run(step, ctx) {
   S.busy = true; S.error = null; render();
   try {
     // Отрасль и должность — общий контекст для всех шагов разбора.
-    const out = await callStep(step, { industry: S.industry, role: S.role, ...ctx });
+    const out = await callStep(step, { industry: S.industry, role: S.role, restatedUser: S.restatedUser, ...ctx });
     S.busy = false;
     return out.data;
   } catch (e) {
@@ -296,7 +299,8 @@ function parkAndReset() {
   if (had && !S.browse) histUpsert(S.step);
   const note = had && !S.browse ? { id: S.runId, title: S.read.restated, done: S.step === "sheet" } : null;
   Object.assign(S, {
-    step: "input", situation: "", industry: S.industry, role: S.role, runId: null, read: null, answers: {}, free: {}, extra: "",
+    step: "input", situation: "", industry: S.industry, role: S.role, runId: null, read: null,
+    restatedUser: "", editRestated: false, goDecide: false, answers: {}, free: {}, extra: "",
     refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
     approachIds: [], firstStep: "", error: null, busy: false, savedNote: note, browse: false,
     contact: { share: null, sent: false, sending: false, error: null },
@@ -344,9 +348,9 @@ function viewInput() {
   return `${stepsBar()}
   <div class="eyebrow">Шаг 1 · Ситуация</div>
   <h1 style="margin-top:10px">Опишите управленческий вызов, с которым имеете дело</h1>
-  <p class="lede">Опишите его своими словами. Чем подробнее вы опишете ситуацию, тем полнее будет
-  диагностика. Дальше мы зададим уточняющие вопросы, чтобы точнее определить тип вашей ситуации.
-  Без названий компаний и людей — они не нужны.</p>
+  <p class="lede">Расскажите об общем контексте ситуации и вашем к ней отношении. Как вы пришли в эту точку?
+  Между какими вариантами действия вы выбираете? Что или кто мешает сделать выбор прямо сейчас?
+  Какой вариант кажется вам предпочтительным? Как будет развиваться ситуация в будущем?</p>
   ${S.savedNote ? `<div class="card hl" style="margin-top:20px">
     <div class="k">${S.savedNote.done ? "Разбор завершён" : "Разбор отложен"}</div>
     <p style="font-size:.93rem">«${esc(S.savedNote.title)}» сохранён в истории${S.savedNote.done ? "" : " на том шаге, где вы остановились"}.
@@ -366,9 +370,9 @@ function viewInput() {
           placeholder="Выберите из списка или впишите" value="${esc(S.role)}">
         <datalist id="roleList">${opts(ROLES)}</datalist></label>
     </div>
-    <textarea id="sit" rows="9" placeholder="Общий контекст ситуации и ваше к ней отношение. Как вы пришли в эту точку. Между какими вариантами действия вы выбираете. Что или кто мешает сделать выбор прямо сейчас. Какой вариант кажется вам предпочтительным. Как будет развиваться ситуация в будущем.">${esc(S.situation)}</textarea>
-    <div class="card flat example">
-      <div class="k">Пример — так это выглядит в готовом виде</div>
+    <textarea id="sit" rows="9" placeholder="Опишите ситуацию своими словами. Чем подробнее вы её опишете, тем полнее будет диагностика. Дальше мы зададим уточняющие вопросы, чтобы точнее определить тип вашей ситуации. Без названий компаний и людей — они не нужны.">${esc(S.situation)}</textarea>
+    <details class="card flat example">
+      <summary>Пример — так это выглядит в готовом виде</summary>
       <p>Мы — розничная сеть в нескольких регионах. Закупки и ассортимент исторически ведёт центр:
       это даёт объёмные скидки у поставщиков и единый стандарт качества. За последний год мы открыли
       восемь новых точек, центр перестал успевать согласовывать ассортимент, а региональные директора
@@ -380,7 +384,7 @@ function viewInput() {
       <p>Мне ближе разделение, но нет уверенности, что его удержат: боюсь, через год мы снова будем спорить
       о том же. Если ничего не менять, центр будет тормозить рост, а если отдать всё регионам — сеть
       расползётся по стандартам и марже.</p>
-    </div>
+    </details>
     ${S.error ? `<p class="err">${esc(S.error)}</p>` : ""}
     <div class="acts" style="margin-top:0">
       <button class="go" id="start">Разобрать ситуацию</button>
@@ -454,7 +458,7 @@ function viewQuestions() {
   <div class="eyebrow">Шаг 2 из 6 · Вопросы</div>
   <h1 style="margin-top:10px">Уточняющие вопросы по вашей ситуации</h1>
   <div class="stack" style="margin-top:22px">
-    <div class="tile"><div class="k">Ситуация, как я её понял</div><p>${esc(r.restated)}</p></div>
+    ${restatedTile(r)}
     ${challengesCard(r.challenges)}
 
     <div class="card hl">
@@ -479,6 +483,21 @@ function viewQuestions() {
     <button class="back" data-goto="input">Переписать ситуацию</button>
     ${parkButton()}
   </div>`;
+}
+
+/** Формулировка ситуации от агента — участник может её поправить. */
+function restatedTile(r) {
+  if (S.editRestated) {
+    return `<div class="tile"><div class="k">Поправьте формулировку</div>
+      <textarea id="restatedEdit" rows="3">${esc(S.restatedUser || r.restated)}</textarea>
+      <div class="acts" style="margin-top:10px">
+        <button class="go" id="restatedSave">Сохранить</button>
+        <button class="back" id="restatedCancel">Отмена</button>
+      </div></div>`;
+  }
+  return `<div class="tile"><div class="k">${S.restatedUser ? "Ситуация — в вашей формулировке" : "Ситуация, как я её понял"}</div>
+    <p>${esc(S.restatedUser || r.restated)}</p>
+    <button class="more" id="restatedEditBtn" style="margin-top:10px">${S.restatedUser ? "Изменить ещё раз" : "Поправить формулировку"}</button></div>`;
 }
 
 function beamRead(ax, pos) {
@@ -619,7 +638,7 @@ function viewAxis() {
     ${S.busy ? thinkBox("Агент собирает направления решений") : ""}
   </div>
   <div class="acts">
-    <button class="go" id="toDecideParadox" ${S.decide ? "" : "disabled"}>${S.decide ? "Далее — к направлениям решений" : "Считаем направления решений…"}</button>
+    <button class="go" id="toDecideParadox" ${S.goDecide && !S.decide ? "disabled" : ""}>${S.goDecide && !S.decide ? "Считаем направления решений — откроются сами…" : "Далее — к направлениям решений"}</button>
     <button class="back" data-goto="readings">Назад к прочтениям</button>
     ${parkButton()}
   </div>`;
@@ -768,9 +787,11 @@ function viewSheet() {
     ${sheetIntro()}
     ${body}
   </div>
+  ${mailCard()}
   ${S.browse ? "" : contactCard()}
   <div class="acts noprint">
-    <button class="go" onclick="window.print()">Распечатать</button>
+    <button class="go" id="mailOpen">Отправить на почту</button>
+    <button class="back" onclick="window.print()">Распечатать</button>
     <button class="back" data-goto="decide">Назад</button>
     ${parkButton()}
   </div>`;
@@ -786,10 +807,74 @@ function sheetIntro() {
     ? `<div class="sheet-score"><b>${pct}%</b><span>парадоксальность по оценке на шаге 3</span></div>`
     : `<div class="sheet-score"><b>${pct}%</b><span>на шаге 3 это больше походило на ${esc(RU[h.type])}, чем на парадокс</span></div>`;
   return `<div class="sect sheet-intro">
-    <div class="k">Ситуация, как я её понял</div>
-    <p>${esc(S.read?.restated || "")}</p>
+    <div class="k">${S.restatedUser ? "Ситуация — в вашей формулировке" : "Ситуация, как я её понял"}</div>
+    <p>${esc(S.restatedUser || S.read?.restated || "")}</p>
     ${score}
   </div>`;
+}
+
+/* ---------------- отправка карты на почту ---------------- */
+
+const mail = { open: false, to: "", sending: false, sent: "", error: null };
+
+function mailCard() {
+  if (!mail.open) return "";
+  if (mail.sent) return `<div class="card hl noprint" style="margin-top:24px"><div class="k">Отправлено</div>
+    <p>Карта ушла на ${esc(mail.sent)}. Если письма нет пару минут — загляните в «Спам».</p></div>`;
+  return `<div class="card noprint mailcard" style="margin-top:24px">
+    <div class="k">Отправить карту на почту</div>
+    <label class="f"><b>Email</b>
+      <input type="email" id="mailTo" autocomplete="email" inputmode="email" value="${esc(mail.to || S.contact.email || "")}"></label>
+    ${mail.error ? `<p class="err">${esc(mail.error)}</p>` : ""}
+    <div class="acts" style="margin-top:14px">
+      <button class="go" id="mailSend" ${mail.sending ? "disabled" : ""}>${mail.sending ? "Отправляем…" : "Отправить"}</button>
+    </div></div>`;
+}
+
+/** Карта обычным текстом — для письма. */
+function sheetPlainText() {
+  const t = S.chosenType, d = S.decide, h = S.refine?.hypothesis;
+  const L = [`ТЕОРИЯ ПАРАДОКСОВ — ваша карта (${new Date().toLocaleDateString("ru-RU")})`, ""];
+  L.push("СИТУАЦИЯ", S.restatedUser || S.read?.restated || "", "");
+  if (h) L.push(`Оценка на шаге 3: похоже на ${RU[h.type]}, уверенность ${Math.round((h.confidence || 0) * 100)}%`, "");
+  L.push(`ВАШ ВЫБОР: ${RU[t] || ""} — способ: ${VERB[t] || ""}`, "");
+  if (t === "paradox") {
+    (S.refine?.axes || []).forEach((a, i) => {
+      L.push(`ПОЛЮСА${S.refine.axes.length > 1 ? ` · парадокс ${i + 1}` : ""}: ${a.a} — ${a.b}`,
+        `${a.a}: ${a.gives_a}`, `${a.b}: ${a.gives_b}`,
+        `Где вы сейчас: ${beamRead(a, S.positions[i] ?? a.position?.value ?? 50)}`, "");
+    });
+    const picked = (d?.approaches || []).filter(x => S.approachIds.includes(x.id));
+    for (const a of picked) {
+      L.push(`ПОДХОД: ${APPR_NAME[a.id]}`, a.why, "Вопросы к себе:", ...a.questions.map(q => `— ${q}`), "");
+    }
+  } else if (t === "problem" && d) {
+    L.push(`Формулировка: ${d.frame}`, `Признак «решено»: ${d.done}`, `Первый шаг: ${d.first_step}`, `Проверка возврата: ${d.return_check}`);
+  } else if (d) {
+    L.push(`A: ${d.alt_a} — цена отказа: ${d.cost_a}`, `B: ${d.alt_b} — цена отказа: ${d.cost_b}`,
+      `Критерий: ${d.criterion}`, `Срок: ${d.deadline}`, `Проверка возврата: ${d.return_check}`);
+  }
+  L.push("", "—", "Исследовательский прототип научного кружка Школы управления СКОЛКОВО. Результаты носят учебный характер.");
+  return L.join("\n");
+}
+
+async function mailSend() {
+  const to = ($("#mailTo")?.value || "").trim();
+  mail.to = to;
+  if (!/^\S+@\S+\.\S+$/.test(to)) { mail.error = "Проверьте адрес почты."; render(); return; }
+  mail.error = null; mail.sending = true; render();
+  try {
+    const r = await fetch("/api/mail", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, text: sheetPlainText() }),
+    });
+    const out = await r.json().catch(() => ({}));
+    mail.sending = false;
+    if (!r.ok || !out.ok) { mail.error = out.error || "Не получилось отправить. Попробуйте чуть позже."; render(); return; }
+    mail.sent = to; render();
+  } catch {
+    mail.sending = false; mail.error = "Нет связи с сервером. Попробуйте чуть позже."; render();
+  }
 }
 
 /* ---------------- контакты для исследования ---------------- */
@@ -1012,7 +1097,10 @@ function maybeAutoDecide() {
       chosenType: "paradox", chosenAxes: chosenAxesCtx() };
     const data = await run("decide_paradox", ctx);
     if (data) { S.decide = data; S.approachIds = data.recommended ? [data.recommended] : []; }
-    else { S.decideRequested = false; }
+    else { S.decideRequested = false; S.goDecide = false; }
+    if (data && S.goDecide && S.step === "axis") {
+      S.goDecide = false; S.step = "decide"; histUpsert("decide"); render(); window.scrollTo({ top: 0 }); return;
+    }
     render();
   })();
 }
@@ -1068,7 +1156,7 @@ document.addEventListener("click", async (e) => {
   if (focus) {
     const data = await run("read", { situation: S.situation, focus: focus.dataset.focus, extra: S.extra });
     if (data) {
-      S.read = data; S.answers = {}; S.free = {}; S.step = "questions";
+      S.read = data; S.answers = {}; S.free = {}; S.step = "questions"; S.restatedUser = "";
       histUpsert("questions"); render(); window.scrollTo({ top: 0 });
     }
     return;
@@ -1135,7 +1223,7 @@ document.addEventListener("click", async (e) => {
     if (S.situation.length < 15) { S.error = "Добавьте пару предложений — по одной фразе разобрать нечего."; render(); return; }
     const data = await run("read", { situation: S.situation });
     if (data) {
-      S.read = data; S.answers = {}; S.step = "questions";
+      S.read = data; S.answers = {}; S.step = "questions"; S.restatedUser = "";
       S.runId = (globalThis.crypto?.randomUUID?.() || String(Date.now()) + Math.random().toString(16).slice(2));
       histUpsert("questions");
       render(); window.scrollTo({ top: 0 });
@@ -1200,8 +1288,10 @@ document.addEventListener("click", async (e) => {
   }
 
   if (e.target.closest("#toDecideParadox")) {
-    if (!S.decide) return; // ещё считается в фоне — кнопка должна быть недоступна
-    S.step = "decide"; histUpsert("decide"); render(); window.scrollTo({ top: 0 });
+    // Направления считаются в фоне с момента входа на шаг. Если ещё не готовы —
+    // запоминаем нажатие и переходим сами, как только ответ придёт.
+    if (!S.decide) { S.goDecide = true; S.error = null; maybeAutoDecide(); render(); return; }
+    S.goDecide = false; S.step = "decide"; histUpsert("decide"); render(); window.scrollTo({ top: 0 });
     return;
   }
 
@@ -1212,6 +1302,20 @@ document.addEventListener("click", async (e) => {
     S.approachIds = S.approachIds.includes(id) ? S.approachIds.filter(x => x !== id) : [...S.approachIds, id];
     render(); return;
   }
+
+  if (e.target.closest("#restatedEditBtn")) { S.editRestated = true; render(); $("#restatedEdit")?.focus(); return; }
+  if (e.target.closest("#restatedCancel")) { S.editRestated = false; render(); return; }
+  if (e.target.closest("#restatedSave")) {
+    const v = ($("#restatedEdit")?.value || "").trim();
+    S.restatedUser = v && v !== S.read.restated ? v : "";
+    S.editRestated = false; histUpsert(S.step); render(); return;
+  }
+
+  if (e.target.closest("#mailOpen")) {
+    Object.assign(mail, { open: true, sent: "", error: null }); render();
+    $("#mailTo")?.focus(); return;
+  }
+  if (e.target.closest("#mailSend")) { mailSend(); return; }
 
   const sh = e.target.closest("[data-share]");
   if (sh) { S.contact.share = sh.dataset.share; S.contact.error = null; render(); return; }

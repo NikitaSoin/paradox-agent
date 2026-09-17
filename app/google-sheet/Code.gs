@@ -54,6 +54,7 @@ const COLUMNS = [
   ["company", "Компания"],
   ["position", "Должность (контакты)"],
   ["email", "Email"],
+  ["restated_user", "Ситуация одной фразой (поправил участник)"],
 ];
 
 function doPost(e) {
@@ -61,6 +62,7 @@ function doPost(e) {
   try { data = JSON.parse(e.postData.contents); } catch (err) { return reply({ ok: false, error: "bad json" }); }
   if (data.secret !== SECRET) return reply({ ok: false, error: "forbidden" });
   if (data.action === "get") return readRow(data.id);
+  if (data.action === "mail") return sendMail(data);
   if (data.action === "last") return readLast(Number(data.n) || 3);
   if (!data.record || !data.record.id) return reply({ ok: false, error: "no id" });
 
@@ -90,6 +92,19 @@ function doPost(e) {
     return reply({ ok: false, error: String(err && err.message || err) });
   } finally {
     lock.releaseLock();
+  }
+}
+
+// Письмо участнику с его картой. Уходит с Gmail владельца скрипта.
+function sendMail(data) {
+  try {
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(data.to || ""))) return reply({ ok: false, error: "bad email" });
+    if (MailApp.getRemainingDailyQuota() < 1) return reply({ ok: false, error: "quota" });
+    MailApp.sendEmail({ to: data.to, subject: String(data.subject || "Теория парадоксов"),
+      body: String(data.body || "").slice(0, 60000), name: "Теория парадоксов · СКОЛКОВО" });
+    return reply({ ok: true });
+  } catch (err) {
+    return reply({ ok: false, error: String(err && err.message || err) });
   }
 }
 

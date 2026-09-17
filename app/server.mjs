@@ -103,6 +103,19 @@ function authorized(req, url) {
   return false;
 }
 
+// Не больше 5 писем в час с одного адреса и 80 в сутки на всех (лимит Gmail — 100).
+const mailLog = new Map();
+let mailDay = { day: "", n: 0 };
+function mailAllowed(ip) {
+  const now = Date.now(), day = new Date().toISOString().slice(0, 10);
+  if (mailDay.day !== day) mailDay = { day, n: 0 };
+  if (mailDay.n >= 80) return false;
+  const recent = (mailLog.get(ip) || []).filter(t => now - t < 3600000);
+  if (recent.length >= 5) return false;
+  recent.push(now); mailLog.set(ip, recent); mailDay.n++;
+  return true;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -146,6 +159,33 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/config") {
     res.writeHead(200, { "Content-Type": MIME[".json"] });
     return res.end(JSON.stringify({ live: hasKey, ...providerInfo }));
+  }
+
+  // Отправка карты на почту — через тот же скрипт Google (MailApp).
+  // Ограничение частоты: сервер не должен превращаться в рассылку спама.
+  if (url.pathname === "/api/mail" && req.method === "POST") {
+    const json = (code, obj) => { res.writeHead(code, { "Content-Type": MIME[".json"] }); res.end(JSON.stringify(obj)); };
+    let body;
+    try { body = await readBody(req); } catch { return json(400, { ok: false, error: "Некорректный запрос" }); }
+    const to = String(body?.to || "").trim(), text = String(body?.text || "");
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(to) || to.length > 200) return json(400, { ok: false, error: "Проверьте адрес почты." });
+    if (!text || text.length > 60000) return json(400, { ok: false, error: "Нечего отправлять" });
+    if (!SHEETS_URL) return json(503, { ok: false, error: "Отправка почты не настроена." });
+    const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    if (!mailAllowed(ip)) return json(429, { ok: false, error: "Слишком много писем подряд. Попробуйте через час." });
+    try {
+      const r = await fetch(SHEETS_URL, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: SHEETS_SECRET, action: "mail", to, subject: "Теория парадоксов — ваша карта", body: text }),
+        signal: AbortSignal.timeout(45000),
+      });
+      const out = JSON.parse(await r.text());
+      if (!out.ok) console.error("[mail] скрипт ответил:", out.error);
+      return json(out.ok ? 200 : 502, out.ok ? { ok: true } : { ok: false, error: "Не получилось отправить. Попробуйте чуть позже." });
+    } catch (e) {
+      console.error("[mail] нет связи:", e?.message || e);
+      return json(502, { ok: false, error: "Не получилось отправить. Попробуйте чуть позже." });
+    }
   }
 
   // Самопроверка связи с таблицей: открыть в браузере /api/sheets-check.

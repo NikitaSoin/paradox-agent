@@ -1,35 +1,47 @@
 :root{
-  --paper:#EEEFF2; --surface:#FFFFFF; --surface-2:#E4E7EC; --sunk:#E9EBEF;
-  --ink:#15171C; --ink-2:#4A4F5C; --ink-3:#767C8B;
-  --line:#D3D7DF; --line-strong:#B0B7C4;
-  --pole-a:#2E4374; --pole-a-soft:#E1E6F2;
-  --pole-b:#8C5A33; --pole-b-soft:#F2E7DC;
-  --ok:#2F6B4F; --warn:#8C5A33; --focus:#2E4374;
-  --shadow:0 1px 2px rgba(21,23,28,.05), 0 8px 24px -16px rgba(21,23,28,.25);
-  --serif:Georgia,"PT Serif","Droid Serif","Times New Roman",serif;
-  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PT Sans",Roboto,Arial,sans-serif;
-  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-  --rail:232px;
+  /* Палитра по памятке «Работа с парадоксами» (SKOLKOVO): тёмно-синий, фиолетовый бренд,
+     бирюза и фиолет для полюсов, оранжевый — для дилеммы. */
+  --paper:#EEF0F5; --surface:#FFFFFF; --surface-2:#F4F5F8; --sunk:#E8EAF1;
+  --ink:#0E1030; --ink-2:#3A3D55; --ink-3:#6E7390;
+  --line:#DFE2EA; --line-strong:#C3C8D8;
+  --brand:#3A2FD6; --brand-2:#5B50E6; --brand-soft:#E8E7FB; --on-brand:#FFFFFF;
+  --navy:#0E1030; --navy-2:#1B1E3D; --navy-ink:#AAB0CF;
+  --hero-1:#3A46D6; --hero-2:#2622A0;
+  --teal:#1E8C98; --orange:#C9701F; --violet:#8A3FE0;
+  --pole-a:#1E8C98; --pole-a-soft:#E2F3F5; --pole-a-line:#9ED3D9;
+  --pole-b:#8A3FE0; --pole-b-soft:#F1E8FC; --pole-b-line:#CDB0F2;
+  --ok:#23875F; --warn:#C9701F; --focus:#3A2FD6;
+  --shadow:0 1px 2px rgba(14,16,48,.05), 0 8px 24px -16px rgba(14,16,48,.28);
+  --font:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --serif:var(--font); --sans:var(--font); --mono:var(--font);
+  --radius:6px;
+  --rail:240px;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --paper:#101216; --surface:#171A20; --surface-2:#1E222A; --sunk:#0C0E12;
-    --ink:#E7E9ED; --ink-2:#A8AEBB; --ink-3:#7B8291;
-    --line:#2A2F38; --line-strong:#3C434F;
-    --pole-a:#93AAE2; --pole-a-soft:#1B2334;
-    --pole-b:#D9A16D; --pole-b-soft:#291F16;
-    --ok:#6FBF95; --warn:#D9A16D; --focus:#93AAE2;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    --paper:#0A0C22; --surface:#13163A; --surface-2:#1A1D45; --sunk:#0E1030;
+    --ink:#EEF0F8; --ink-2:#B6BAD6; --ink-3:#8A8FB2;
+    --line:#282C58; --line-strong:#3A3F74;
+    --brand:#7B72F2; --brand-2:#948CF5; --brand-soft:#221E58; --on-brand:#FFFFFF;
+    --navy:#070920; --navy-2:#161942; --navy-ink:#9CA2C8;
+    --teal:#4CC3CF; --orange:#EDA05A; --violet:#B88AF2;
+    --pole-a:#4CC3CF; --pole-a-soft:#0F2A36; --pole-a-line:#2A6B76;
+    --pole-b:#B88AF2; --pole-b-soft:#2A1C4A; --pole-b-line:#5E4394;
+    --ok:#4FC79A; --warn:#EDA05A; --focus:#948CF5;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 8px 24px -16px rgba(0,0,0,.85);
   }
 }
 :root[data-theme="dark"]{
-  --paper:#101216; --surface:#171A20; --surface-2:#1E222A; --sunk:#0C0E12;
-  --ink:#E7E9ED; --ink-2:#A8AEBB; --ink-3:#7B8291;
-  --line:#2A2F38; --line-strong:#3C434F;
-  --pole-a:#93AAE2; --pole-a-soft:#1B2334;
-  --pole-b:#D9A16D; --pole-b-soft:#291F16;
-  --ok:#6FBF95; --warn:#D9A16D; --focus:#93AAE2;
-  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  --paper:#0A0C22; --surface:#13163A; --surface-2:#1A1D45; --sunk:#0E1030;
+  --ink:#EEF0F8; --ink-2:#B6BAD6; --ink-3:#8A8FB2;
+  --line:#282C58; --line-strong:#3A3F74;
+  --brand:#7B72F2; --brand-2:#948CF5; --brand-soft:#221E58; --on-brand:#FFFFFF;
+  --navy:#070920; --navy-2:#161942; --navy-ink:#9CA2C8;
+  --teal:#4CC3CF; --orange:#EDA05A; --violet:#B88AF2;
+  --pole-a:#4CC3CF; --pole-a-soft:#0F2A36; --pole-a-line:#2A6B76;
+  --pole-b:#B88AF2; --pole-b-soft:#2A1C4A; --pole-b-line:#5E4394;
+  --ok:#4FC79A; --warn:#EDA05A; --focus:#948CF5;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 8px 24px -16px rgba(0,0,0,.85);
 }
 
 *{box-sizing:border-box}
@@ -106,6 +118,8 @@ main{padding:38px 30px 90px; min-width:0}
   background:var(--surface); border:1px solid var(--line-strong); border-radius:3px; font-weight:600}
 .gate-check input{width:28px; height:28px; flex:0 0 28px; margin:0; accent-color:var(--ink); cursor:pointer}
 .gate-check:hover{border-color:var(--ink-3)}
+.gate-go{display:flex; justify-content:center; margin-top:28px}
+.gate-go .go{font-size:1.1rem; padding:17px 64px; min-width:min(320px,100%)}
 
 /* ---------------- primitives ---------------- */
 .eyebrow{font-family:var(--mono); font-size:.65rem; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3)}
@@ -498,9 +512,104 @@ details.case .body{margin-top:9px; font-size:.86rem; color:var(--ink-2)}
 
 /* Пример заполнения на первом шаге — виден постоянно, а не только пока поле пустое. */
 .example{background:var(--sunk); border-style:dashed}
+.example summary{cursor:pointer; font-weight:600; color:var(--ink-2); list-style:none; display:flex; align-items:center; gap:8px}
+.example summary::-webkit-details-marker{display:none}
+.example summary::before{content:"+"; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; flex:0 0 20px; border-radius:4px; background:var(--brand); color:var(--on-brand); font-weight:700}
+.example[open] summary::before{content:"–"}
+.example[open] summary{margin-bottom:12px}
 .example p{font-size:.9rem; color:var(--ink-2)}
 
 /* Режим просмотра записи из истории: листание вместо действий шага. */
 .acts.browse{border-top:1px solid var(--line); padding-top:16px}
 .acts.browse .note{margin-left:auto}
 @media (max-width:480px){.acts.browse .note{margin-left:0; width:100%; text-align:center}}
+
+/* ================= стиль SKOLKOVO =================
+   Поверх базовых правил: шрифт Manrope, заголовки капсом, тёмно-синяя панель,
+   фиолетовые действия, скругление 6px. Держим в конце — перебивает всё выше. */
+body{font-size:16px; line-height:1.58}
+h1,h2{font-weight:800; text-transform:uppercase; letter-spacing:-.01em; line-height:1.12}
+h1{font-size:clamp(1.45rem,1.1rem+1.4vw,1.85rem)}
+h2{font-size:1.2rem}
+h3,h4{font-weight:700; letter-spacing:0}
+a{color:var(--brand)}
+.eyebrow,.k,.chip,.flag,.pole .pk,.beam-lbl span,.scale b,.plane-lbl,.meta b,.caseb .tag,
+table.lib th,.seg button,.badge,.hrow .when,.icon,.pop b,.chal .cur,.plan .h,.beam-read{
+  font-family:var(--font); font-weight:700; letter-spacing:.06em}
+.eyebrow{color:var(--brand); font-size:.72rem; letter-spacing:.12em}
+.k{font-size:.7rem; letter-spacing:.08em}
+
+/* панель слева */
+.rail{background:var(--navy); border-right:0; color:#fff}
+.brand{font-weight:800; font-size:.95rem; text-transform:uppercase; letter-spacing:.04em; color:#fff;
+  display:block; padding-left:16px; position:relative}
+.brand::before{content:""; position:absolute; left:0; top:.28em; width:0; height:0;
+  border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:9px solid var(--teal)}
+.brand small{color:var(--navy-ink); font-weight:700; letter-spacing:.1em}
+.nav{gap:4px}
+.nav button{color:var(--navy-ink); background:var(--navy-2); border-radius:4px; font-weight:700;
+  text-transform:uppercase; font-size:.78rem; letter-spacing:.03em; padding:10px 12px}
+.nav button:hover{background:#262a55; color:#fff}
+.nav button[aria-current="page"]{background:var(--brand); color:#fff; box-shadow:none}
+.nav i{background:currentColor; opacity:.5}
+.nav button[aria-current="page"] i{background:#fff; opacity:1}
+.badge{background:rgba(255,255,255,.12); color:inherit}
+.nav button[aria-current="page"] .badge{background:rgba(255,255,255,.22); color:#fff}
+.rail .seg{background:var(--navy-2); border-color:transparent}
+.rail .seg button{color:var(--navy-ink)}
+.rail .seg button[aria-pressed="true"]{background:var(--brand); color:#fff}
+.rail .chip{border-color:#2d3160; color:var(--navy-ink)}
+.rail .back{color:var(--navy-ink); text-decoration-color:#3a3f74}
+.rail .back:hover{color:#fff}
+
+/* действия */
+.go{background:var(--brand); color:var(--on-brand); border-radius:4px; font-weight:800;
+  text-transform:uppercase; letter-spacing:.03em; font-size:.88rem; padding:13px 26px}
+.go:hover{opacity:1; background:var(--brand-2)}
+.more{color:var(--brand); font-weight:700; text-decoration-color:var(--brand-soft)}
+.more:hover{text-decoration-color:var(--brand)}
+:focus-visible{outline-color:var(--focus)}
+
+/* поверхности */
+.card,.pick,.pole,.appr,.hrow,.sheet,.plane-grid,textarea,input[type=text],input[type=email],
+.contact-grid input,.trio figure,.caseb,.empty,.pop,.think,.gate-check{border-radius:var(--radius)}
+input[type=email]{width:100%; background:var(--surface); border:1px solid var(--line); padding:11px 13px}
+textarea:focus,input[type=text]:focus,input[type=email]:focus{border-color:var(--brand); outline:none; box-shadow:0 0 0 3px var(--brand-soft)}
+.card.hl{background:var(--brand-soft); border-left:4px solid var(--brand)}
+.card.hl .k{color:var(--brand)}
+.tile{background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:var(--radius)}
+.pick:hover{border-color:var(--brand-2)}
+.pick[aria-pressed="true"]{border-color:var(--brand); background:var(--brand-soft); box-shadow:inset 0 0 0 1px var(--brand)}
+.appr.rec{border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft)}
+.reading.sel{border-color:var(--brand)}
+.steps i{height:4px; background:var(--line)}
+.steps i.done{background:var(--brand-2); opacity:.55}
+.steps i.now{background:var(--brand)}
+.qs li::before{color:var(--brand); font-weight:800}
+.plan>div::before{border-color:var(--brand-soft); background:var(--brand-soft); color:var(--brand); font-weight:800}
+.plane-hint.big{background:var(--brand-soft); border-color:var(--brand); border-radius:var(--radius)}
+.plane-dot{background:var(--brand)}
+input[type=range]::-webkit-slider-thumb{background:var(--brand)}
+input[type=range]::-moz-range-thumb{background:var(--brand)}
+
+/* ожидание ответа модели */
+.think{border:1px solid var(--line); background:var(--surface)}
+.dotfield i{background:var(--brand)}
+
+/* итоговая карта */
+.sheet{border-color:var(--line)}
+.sheet-score b{color:var(--brand); font-weight:800; font-size:2rem}
+
+/* стартовый экран */
+.gate-hero{background:linear-gradient(135deg,var(--hero-1),var(--hero-2)); color:#fff;
+  border-radius:var(--radius); padding:26px 24px 28px}
+.gate-hero .eyebrow{color:#C9CCF5}
+.gate-hero h1{color:#fff; margin-top:10px}
+.gate-hero .lede{color:rgba(255,255,255,.9)}
+.gate-check input{accent-color:var(--brand)}
+.gate-check:hover{border-color:var(--brand)}
+.gate-go .go{font-size:1.05rem; padding:18px 64px}
+
+@media print{
+  .sheet-score b{color:#000}
+}

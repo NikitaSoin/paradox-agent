@@ -15,10 +15,11 @@ window.confirm = () => true;
 window.print = () => {};
 
 // Заглушка сети: /api/config, /api/theory и SSE-поток /api/step из демо-данных.
-let apiCalls = 0, lastCtx = null; const records = []; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
+let apiCalls = 0, lastCtx = null; const records = []; const mails = []; // сколько раз дёрнули агента — нужно, чтобы ловить лишние вызовы
 const fakeFetch = async (url, opts) => {
   if (url === "/api/config") return { ok: true, json: async () => ({ live: false, model: "claude-opus-5" }) };
   if (url === "/api/theory") return { ok: true, json: async () => THEORY };
+  if (url === "/api/mail") { mails.push(JSON.parse(opts.body)); return { ok: true, json: async () => ({ ok: true }) }; }
   if (url === "/api/record") { records.push(JSON.parse(opts.body).record); return { ok: true }; }
   if (url === "/api/step") {
     apiCalls++;
@@ -61,6 +62,7 @@ must(q("#gate").hidden, "«Начать» закрывает экран");
 must(window.localStorage.getItem("paradox.consent") === "no", "снятая галочка запоминается");
 
 console.log("\n1. Экран входа");
+must(q("details.example") && !q("details.example").open, "пример на шаге 1 свёрнут");
 must(q("#sit"), "поле ввода ситуации");
 q("#sit").value = "Совет требует сократить расходы на 20%, но единственный источник роста — новые продукты, и режем мы их.";
 q("#industry").value = "Розничная торговля";
@@ -78,6 +80,12 @@ const opts = document.querySelectorAll("[data-q]");
 must(opts.length > 0, `варианты ответов отрисованы (${opts.length})`);
 must(!q("#view-diag").innerHTML.includes("undefined"), "в разметке нет undefined");
 must(q(".tile"), "ситуация вынесена в плитку, а не в заголовок");
+click(q("#restatedEditBtn")); await wait(20);
+must(q("#restatedEdit"), "формулировку ситуации можно поправить");
+q("#restatedEdit").value = "Моя формулировка: центр против регионов.";
+click(q("#restatedSave")); await wait(20);
+must(q(".tile").textContent.includes("Моя формулировка"), "поправленная формулировка показана");
+must(raw()[0].restatedUser === "Моя формулировка: центр против регионов.", "поправленная формулировка сохранена в истории");
 must(document.querySelectorAll(".chal > div").length === 3, "разбор ситуации на три вызова");
 { // ситуация обязана быть прочитана во всех трёх рамках, а не только в одной
   const shown = [...document.querySelectorAll(".chal .chal-type")].map(el => el.textContent.trim().toLowerCase());
@@ -172,7 +180,7 @@ for (const type of ["paradox", "problem", "dilemma"]) {
   await wait(60);
   must(q(".sheet"), "карта собрана");
   must(!q(".sheet").innerHTML.includes("undefined"), "в карте нет undefined");
-  must(q(".sheet .sheet-intro") && q(".sheet .sheet-intro").textContent.includes(raw()[0].restated), "карта начинается с ситуации из шага 2");
+  must(q(".sheet .sheet-intro") && q(".sheet .sheet-intro").textContent.includes(raw()[0].restatedUser || raw()[0].restated), "карта начинается с ситуации из шага 2");
   must(/\d+%/.test(q(".sheet .sheet-score")?.textContent || ""), "в начале карты — процент из шага 3");
   if (type === "paradox") {
     must(!q(".sheet .plan"), "плана нет и в собранной карте");
@@ -194,6 +202,12 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     must(raw()[0].approachIds.length === 2, "в истории сохраняются оба подхода");
     await wait(900);
     must(records.length === 0, "галочка снята — в таблицу ничего не уходит");
+    must(q(".sheet-intro").textContent.includes("Моя формулировка"), "в карте — поправленная формулировка");
+    click(q("#mailOpen")); await wait(20);
+    q("#mailTo").value = "me@example.com";
+    click(q("#mailSend")); await wait(40);
+    must(mails.at(-1)?.to === "me@example.com" && mails.at(-1).text.includes("Моя формулировка"), "карта уходит на почту текстом");
+    must(q("#view-diag").textContent.includes("Карта ушла на me@example.com"), "после отправки — подтверждение");
     must(q(".contact [data-share]"), "на карте есть вопрос про контакты");
     click(q('[data-share="yes"]')); await wait(20);
     must(document.querySelectorAll("[data-contact]").length === 5, "при «да» — пять полей контактов");
