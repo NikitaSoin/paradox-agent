@@ -67,9 +67,15 @@ must(q("details.example") && !q("details.example").open, "пример на ша
 must(q("details.example summary").textContent.includes("Посмотреть пример") && q(".ex-preview").textContent.startsWith("Мы — розничная сеть"), "в свёрнутом примере видна подпись и первая строка кейса");
 must(q("#sit"), "поле ввода ситуации");
 q("#sit").value = "Совет требует сократить расходы на 20%, но единственный источник роста — новые продукты, и режем мы их.";
-q("#industry").value = "Розничная торговля";
-q("#role").value = "Генеральный директор";
-must(q("#industryList option") && q("#roleList option"), "подсказки для отрасли и должности");
+q("#sit").dispatchEvent(new window.Event("input", { bubbles: true }));
+click(q('[data-combo="industry"]')); await wait(20);
+must(document.querySelectorAll('[data-combo-pick="industry"]').length > 5, "список отраслей открывается по кнопке");
+click(document.querySelector('[data-combo-pick="industry"][data-val="Розничная торговля"]')); await wait(20);
+must(q("#industry").value === "Розничная торговля" && !q(".combo-list"), "выбранная отрасль подставилась, список закрылся");
+click(q('[data-combo="role"]')); await wait(20);
+click(document.querySelector('[data-combo-pick="role"][data-val="Генеральный директор"]')); await wait(20);
+must(q("#role").value === "Генеральный директор", "должность выбирается так же");
+must(q("#sit").value.startsWith("Совет требует"), "набранный текст ситуации не теряется при работе со списками");
 click(q("#start"));
 await wait(120);
 must(lastCtx?.industry === "Розничная торговля" && lastCtx?.role === "Генеральный директор", "отрасль и должность уходят в запрос");

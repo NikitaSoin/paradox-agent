@@ -356,8 +356,34 @@ const ROLES = ["Собственник / акционер", "Генеральн�
   "Директор направления / подразделения", "Руководитель среднего звена", "Основатель / предприниматель",
   "Консультант / эксперт"];
 
+/** Поле со списком: можно выбрать готовый вариант или вписать свой.
+ *  Свой список, а не <datalist>: на телефонах готовые варианты в нём не показываются. */
+function combo(id, label, list, value) {
+  const open = comboOpen === id;
+  return `<label class="combo${open ? " open" : ""}"><span class="k">${esc(label)}</span>
+    <span class="combo-field">
+      <input type="text" id="${id}" autocomplete="off" role="combobox" aria-expanded="${open}"
+        placeholder="Выберите из списка или впишите" value="${esc(value)}">
+      <button type="button" class="combo-btn" data-combo="${id}" aria-label="Показать список"></button>
+    </span>
+    ${open ? comboListHtml(id, list, value) : ""}
+  </label>`;
+}
+
+function comboListHtml(id, list, value) {
+  const f = (comboFilter[id] || "").toLowerCase();
+  const items = list.filter(v => !f || v.toLowerCase().includes(f));
+  return `<span class="combo-list" role="listbox">
+    ${items.length ? items.map(v => `<button type="button" class="combo-opt" data-combo-pick="${id}" data-val="${esc(v)}"
+      aria-selected="${v === value}">${esc(v)}</button>`).join("")
+    : `<span class="combo-empty">Ничего не нашлось — впишите свой вариант</span>`}
+  </span>`;
+}
+
+let comboOpen = null;
+const comboFilter = { industry: "", role: "" };
+
 function viewInput() {
-  const opts = (list) => list.map(v => `<option value="${esc(v)}"></option>`).join("");
   return `${stepsBar()}
   <div class="eyebrow">Шаг 1 · Ситуация</div>
   <h1 style="margin-top:10px">Опишите управленческий вызов, с которым имеете дело</h1>
@@ -374,14 +400,8 @@ function viewInput() {
   </div>` : ""}
   <div class="stack" style="margin-top:20px">
     <div class="who">
-      <label><span class="k">Ваша отрасль</span>
-        <input type="text" id="industry" list="industryList" autocomplete="off"
-          placeholder="Выберите из списка или впишите" value="${esc(S.industry)}">
-        <datalist id="industryList">${opts(INDUSTRIES)}</datalist></label>
-      <label><span class="k">Ваша должность</span>
-        <input type="text" id="role" list="roleList" autocomplete="off"
-          placeholder="Выберите из списка или впишите" value="${esc(S.role)}">
-        <datalist id="roleList">${opts(ROLES)}</datalist></label>
+      ${combo("industry", "Ваша отрасль", INDUSTRIES, S.industry)}
+      ${combo("role", "Ваша должность", ROLES, S.role)}
     </div>
     <textarea id="sit" rows="9" placeholder="Опишите ситуацию своими словами. Чем подробнее вы её опишете, тем полнее будет диагностика. Дальше мы зададим уточняющие вопросы, чтобы точнее определить тип вашей ситуации. Без названий компаний и людей — они не нужны.">${esc(S.situation)}</textarea>
     <details class="card flat example">
@@ -1322,6 +1342,23 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const cb = e.target.closest("[data-combo]");
+  if (cb) {
+    const id = cb.dataset.combo;
+    comboOpen = comboOpen === id ? null : id;
+    comboFilter[id] = "";
+    render();
+    if (comboOpen) $("#" + id)?.focus();
+    return;
+  }
+  const pick = e.target.closest("[data-combo-pick]");
+  if (pick) {
+    S[pick.dataset.comboPick] = pick.dataset.val;
+    comboOpen = null; comboFilter[pick.dataset.comboPick] = "";
+    render(); return;
+  }
+  if (comboOpen && !e.target.closest(".combo")) { comboOpen = null; render(); }
+
   const th = e.target.closest("[data-theme-set]");
   if (th) { themeSet(th.dataset.themeSet); return; }
 
@@ -1336,8 +1373,12 @@ document.addEventListener("click", async (e) => {
   const open = e.target.closest("[data-open]");
   if (open && open.classList.contains("hrow")) { histOpen(open.dataset.open); return; }
 
+  if (e.target.closest("#railToggle")) { railToggle(); return; }
+  if (e.target.closest("#railScrim")) { railToggle(false); return; }
+
   const nav = e.target.closest("#nav button");
   if (nav) {
+    railToggle(false); // на телефоне после выбора раздела панель прячем
     // Ушли из истории во время просмотра записи — просмотр закрываем,
     // иначе «Диагностика» показала бы чужой разбор в режиме листания.
     if (S.browse && nav.dataset.view !== "history") histClose();
@@ -1512,8 +1553,23 @@ document.addEventListener("input", (e) => {
     return;
   }
   if (e.target.id === "extra") { S.extra = e.target.value; return; }
+  // Текст ситуации держим в состоянии, иначе любая перерисовка экрана (например,
+  // открытие списка отраслей) стёрла бы набранное.
+  if (e.target.id === "sit") { S.situation = e.target.value; return; }
   if (e.target.dataset?.contact) { S.contact[e.target.dataset.contact] = e.target.value; return; }
-  if (e.target.id === "industry" || e.target.id === "role") { S[e.target.id] = e.target.value.trim(); return; }
+  if (e.target.id === "industry" || e.target.id === "role") {
+    // Набор текста фильтрует список и открывает его, но свой вариант тоже принимается.
+    const id = e.target.id;
+    S[id] = e.target.value.trim();
+    comboFilter[id] = S[id];
+    if (comboOpen !== id) { comboOpen = id; const pos = e.target.selectionStart; render();
+      const el = $("#" + id); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }
+    else {
+      const list = $(`.combo.open .combo-list`);
+      if (list) list.outerHTML = comboListHtml(id, id === "industry" ? INDUSTRIES : ROLES, S[id]);
+    }
+    return;
+  }
   if (e.target.classList?.contains("beam")) {
     const i = Number(e.target.dataset.axis);
     setAxisPosition(i, Number(e.target.value));
@@ -1574,6 +1630,13 @@ document.addEventListener("pointerup", (e) => {
   dragPlane = null;
 });
 document.addEventListener("pointercancel", () => { dragPlane = null; });
+
+/** Выдвижная панель на телефоне: открыть, закрыть или переключить. */
+function railToggle(to) {
+  const open = to === undefined ? !document.body.classList.contains("rail-open") : to;
+  document.body.classList.toggle("rail-open", open);
+  $("#railToggle")?.setAttribute("aria-expanded", String(open));
+}
 
 /* ---------------- стартовый экран с условиями ---------------- */
 // Показывается при каждом открытии сайта; в пределах вкладки после «Начать» не повторяется.
