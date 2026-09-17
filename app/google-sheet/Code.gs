@@ -66,6 +66,7 @@ function doPost(e) {
   try { data = JSON.parse(e.postData.contents); } catch (err) { return reply({ ok: false, error: "bad json" }); }
   if (data.secret !== SECRET) return reply({ ok: false, error: "forbidden" });
   if (data.action === "batch") return writeRows(data.records);
+  if (data.action === "purge") return purgeRows(String(data.prefix || ""));
   if (data.action === "get") return readRow(data.id);
   if (data.action === "mail") return sendMail(data);
   if (data.action === "store_pdf") return storePdf(data);
@@ -199,6 +200,28 @@ function writeRows(records) {
       written++;
     }
     return reply({ ok: true, written: written });
+  } catch (err) {
+    return reply({ ok: false, error: String(err && err.message || err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Удаление служебных строк по началу id (например, после нагрузочной проверки).
+function purgeRows(prefix) {
+  if (!prefix) return reply({ ok: false, error: "no prefix" });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(60000);
+    const sheet = ensureSheet();
+    const last = sheet.getLastRow();
+    if (last < 2) return reply({ ok: true, removed: 0 });
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    let removed = 0;
+    for (var i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0]).indexOf(prefix) === 0) { sheet.deleteRow(i + 2); removed++; }
+    }
+    return reply({ ok: true, removed: removed });
   } catch (err) {
     return reply({ ok: false, error: String(err && err.message || err) });
   } finally {
