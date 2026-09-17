@@ -71,7 +71,7 @@ const ACCESS_CODE = process.env.ACCESS_CODE || "";
 // Метка версии, чтобы по /api/sheets-check было видно, что хостинг подтянул свежий код.
 const VERSION = "2026-09-17-sheets";
 const SHEETS_URL = process.env.SHEETS_URL ??
-  "https://script.google.com/macros/s/AKfycbxS5uijEorg2nE3w3JjY7o2---TC5zQIWhQeG9LjO_A3gGujJEH7VYMv6zJvA4ALPNPkg/exec";
+  "https://script.google.com/macros/s/AKfycbwtrE6g1Nyzd3r2xeSMT8FRWjJiHty1l5BGKz73TD1JXalikXeaP7phRdiSnZHXIoDSlQ/exec";
 const SHEETS_SECRET = process.env.SHEETS_SECRET ?? "Snm081105";
 const COOKIE = "pa_access";
 
@@ -134,6 +134,8 @@ function queueRecord(record) {
 
 async function callScript(payload, { tries = 2, timeout = 90000 } = {}) {
   for (let attempt = 1; attempt <= tries; attempt++) {
+    // Первое обращение к «спящему» скрипту часто отваливается; перед повтором ждём.
+    if (attempt > 1) await new Promise(r => setTimeout(r, 4000));
     try {
       const r = await fetch(SHEETS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ secret: SHEETS_SECRET, ...payload }), signal: AbortSignal.timeout(timeout) });
@@ -194,6 +196,9 @@ async function pdfWorker() {
     while (pdfQueue.length) {
       const job = pdfQueue.shift();
       try {
+        // Сначала дописываем накопленные строки: скрипт ставит ссылку на файл
+        // в строку разбора, и она должна к этому моменту существовать.
+        await flushRecords();
         const pdf = await readFile(job.file, "utf8");
         await callScript({ action: "store_pdf", id: job.id, filename: job.filename, pdf }, { tries: 3 });
       } catch (e) {
