@@ -403,7 +403,7 @@ function viewInput() {
     <div class="acts" style="margin-top:0">
       <button class="go" id="start">Разобрать ситуацию</button>
     </div>
-    ${S.busy ? thinkBox("Агент читает ситуацию") : ""}
+    ${S.busy ? thinkBox("Агент разбирает ситуацию") : ""}
   </div>`;
 }
 
