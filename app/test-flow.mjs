@@ -264,7 +264,7 @@ must(!q("#view-history").innerHTML.includes("undefined"), "в истории н�
 must(q("#histCount").textContent === "1" && !q("#histCount").hidden, "счётчик в навигации");
 click(q(".hrow"));
 await wait(60);
-must(!q("#view-diag").hidden && q(".sheet"), "запись открылась на собранной карте");
+must(!q("#view-history").hidden && q("#view-diag").hidden && q("#view-history .sheet"), "запись открылась внутри вкладки «История», а не в «Диагностике»");
 
 // Листание завершённой записи: назад до самого начала и обратно вперёд,
 // и ни на одном шаге агент не должен дёргаться.
@@ -284,6 +284,12 @@ while (fwdBtn() && !fwdBtn().disabled && f < 10) { click(fwdBtn()); await wait(3
 must(f === 4, `и вперёд обратно до карты (прошли ${f})`);
 must(q(".sheet"), "вернулись на собранную карту");
 must(apiCalls === callsBefore, "за всё листание агент не вызывался ни разу");
+click(q("#histBack")); await wait(40);
+must(document.querySelectorAll(".hrow").length === 1 && !q(".sheet"), "кнопка «К списку разборов» возвращает к списку");
+click(q(".hrow")); await wait(40);
+click(document.querySelector('#nav [data-view="diag"]')); await wait(40);
+must(q("#sit") && !q("#sit").disabled, "переход в «Диагностику» из просмотра открывает чистый экран ввода");
+click(document.querySelector('#nav [data-view="history"]')); await wait(40);
 
 click(q("#restart")); await wait(40);
 q("#sit").value = "Держим двух поставщиков ради надёжности, но объём размывается и оба дают нам худшую цену.";
@@ -307,14 +313,15 @@ must(raw().length === before, "отложенный разбор остался 
 must(q(".card.hl") && q("#view-diag").innerHTML.includes("Разбор отложен"), "показано уведомление о сохранении");
 must(q("[data-open-hist]"), "из уведомления можно открыть запись в истории");
 click(q("[data-open-hist]")); await wait(60);
-must(!q("#view-diag").hidden && q("#view-diag").innerHTML.includes("Уточняющие вопросы"),
-  "запись открылась на том шаге, где остановились");
+must(!q("#view-history").hidden && q("#view-history").innerHTML.includes("Уточняющие вопросы"),
+  "запись открылась в истории на том шаге, где остановились");
 must(q("[data-browse]"), "запись из истории открывается в режиме просмотра — с листанием");
 must(!q("#refine"), "в просмотре кнопки, запускающей агента, нет");
 must(!q("#park"), "в просмотре нет и «отложить» — запись уже сохранена");
 must(q("#resume"), "из просмотра можно продолжить незавершённый разбор");
 click(q("#resume")); await wait(60);
 must(q("#refine") && q("#park"), "после «продолжить» вернулись обычные действия шага");
+must(!q("#view-diag").hidden && q("#view-history").hidden, "«продолжить» переносит разбор в «Диагностику»");
 click(q("#park")); await wait(60);
 click(document.querySelector('#nav [data-view="history"]')); await wait(60);
 must(q("#view-history").innerHTML.includes("не завершён"), "незавершённые помечены в списке");

@@ -209,7 +209,19 @@ function histOpen(id) {
     // вперёд и назад, агента не трогаем. Продолжить разбор можно кнопкой.
     browse: true,
   });
-  view = "diag"; render(); window.scrollTo({ top: 0 });
+  view = "history"; render(); window.scrollTo({ top: 0 });
+}
+
+/** Закрывает просмотр записи и возвращает к списку истории. */
+function histClose() {
+  Object.assign(S, {
+    step: "input", situation: "", runId: null, read: null, answers: {}, free: {}, extra: "",
+    restatedUser: "", editRestated: false, goDecide: false,
+    refine: null, chosenType: null, axisIndex: 0, positions: [], decideRequested: false, decide: null,
+    approachIds: [], firstStep: "", error: null, busy: false, savedNote: null, browse: false,
+    contact: { share: null, sent: false, sending: false, error: null },
+  });
+  view = "history"; render(); window.scrollTo({ top: 0 });
 }
 
 /** Шаги, по которым в этом разборе есть данные — их и можно листать. */
@@ -233,8 +245,9 @@ function browseNav() {
   return `<div class="acts browse">
     <button class="go" data-browse="${next || ""}" ${next ? "" : "disabled"}>Вперёд${next ? "" : " — это последний шаг"}</button>
     <button class="back" data-browse="${prev || ""}" ${prev ? "" : "disabled"}>Назад</button>
-    <span class="note">Просмотр записи · шаг ${Math.max(i, 0) + 1} из ${steps.length}</span>
+    <button class="back" id="histBack">← К списку разборов</button>
     ${done ? "" : `<button class="back" id="resume">Продолжить разбор с этого места</button>`}
+    <span class="note">Просмотр записи · шаг ${Math.max(i, 0) + 1} из ${steps.length}</span>
   </div>`;
 }
 
@@ -1216,22 +1229,31 @@ function maybeAutoDecide() {
   })();
 }
 
+function stepMarkup() {
+  return S.step === "input" ? viewInput() :
+    S.step === "questions" ? viewQuestions() :
+    S.step === "readings" ? viewReadings() :
+    S.step === "axis" ? viewAxis() :
+    S.step === "decide" ? (S.chosenType === "paradox" ? viewDecideParadox() : viewDecideSimple()) :
+    S.step === "sheet" ? viewSheet() : "";
+}
+
 function render() {
   const d = $("#view-diag"), h = $("#view-history"), t = $("#view-theory");
   d.hidden = view !== "diag"; h.hidden = view !== "history"; t.hidden = view !== "theory";
   document.querySelectorAll("#nav button").forEach(b =>
     b.setAttribute("aria-current", b.dataset.view === view ? "page" : "false"));
   histBadge();
-  if (view === "history") { h.innerHTML = viewHistory(); return; }
+  // Открытая из истории запись листается прямо во вкладке «История»,
+  // чтобы просмотр не подменял собой текущий разбор в «Диагностике».
+  if (view === "history") {
+    if (S.browse) { h.innerHTML = stepMarkup(); applyBrowseMode(h); }
+    else h.innerHTML = viewHistory();
+    return;
+  }
   if (view !== "diag") return;
   maybeAutoDecide();
-  d.innerHTML =
-    S.step === "input" ? viewInput() :
-    S.step === "questions" ? viewQuestions() :
-    S.step === "readings" ? viewReadings() :
-    S.step === "axis" ? viewAxis() :
-    S.step === "decide" ? (S.chosenType === "paradox" ? viewDecideParadox() : viewDecideSimple()) :
-    S.step === "sheet" ? viewSheet() : "";
+  d.innerHTML = stepMarkup();
   if (S.browse) applyBrowseMode(d);
   const sit = $("#sit"); if (!S.browse && sit) sit.focus();
 }
@@ -1289,6 +1311,9 @@ document.addEventListener("click", async (e) => {
 
   const nav = e.target.closest("#nav button");
   if (nav) {
+    // Ушли из истории во время просмотра записи — просмотр закрываем,
+    // иначе «Диагностика» показала бы чужой разбор в режиме листания.
+    if (S.browse && nav.dataset.view !== "history") histClose();
     view = nav.dataset.view;
     if (view === "theory") $("#view-theory").innerHTML = viewTheory(await loadTheory());
     render();
@@ -1320,8 +1345,11 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  if (e.target.closest("#histBack")) { histClose(); return; }
+
   if (e.target.closest("#resume")) {
-    S.browse = false; render(); window.scrollTo({ top: 0 }); return;
+    // Продолжаем разбор — это уже работа, а не просмотр: уходим в «Диагностику».
+    S.browse = false; view = "diag"; render(); window.scrollTo({ top: 0 }); return;
   }
 
   const goto = e.target.closest("[data-goto]");
