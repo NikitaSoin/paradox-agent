@@ -379,7 +379,14 @@ const server = createServer(async (req, res) => {
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end("forbidden"); }
   try {
     const buf = await readFile(file);
-    res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream" });
+    // Страница и скрипты — всегда свежие: иначе после выкладки у части людей
+    // останется старая версия из кэша браузера. Картинки и шрифты кэшируем.
+    const ext = extname(file);
+    const fresh = ext === ".html" || ext === ".js" || ext === ".css" || ext === ".json";
+    res.writeHead(200, {
+      "Content-Type": MIME[ext] || "application/octet-stream",
+      "Cache-Control": fresh ? "no-cache, must-revalidate" : "public, max-age=86400",
+    });
     res.end(buf);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
