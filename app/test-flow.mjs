@@ -203,6 +203,7 @@ for (const type of ["paradox", "problem", "dilemma"]) {
     await wait(900);
     must(records.length === 0, "галочка снята — в таблицу ничего не уходит");
     must(q(".sheet-intro").textContent.includes("Моя формулировка"), "в карте — поправленная формулировка");
+    must(q("#pdfSave") && q("#pdfSave").textContent.includes("PDF"), "на карте есть кнопка «Скачать PDF»");
     click(q("#mailOpen")); await wait(20);
     q("#mailTo").value = "me@example.com";
     click(q("#mailSend")); await wait(40);

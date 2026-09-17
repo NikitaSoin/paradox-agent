@@ -31,6 +31,14 @@ const HYPOTHESIS = obj({
   criteria: arr(CRITERION, "Оценка по шести критериям. Все шесть, в порядке из базы знаний."),
 }, "Рабочая гипотеза о типе вызова — не диагноз");
 
+// Облегчённая гипотеза для шага 1: без оценки по шести критериям. Критерии всё равно
+// заново и подробно оцениваются на шаге 3, а на экране вопросов гипотеза не показывается.
+const HYPOTHESIS_LITE = obj({
+  type: HYPOTHESIS.properties.type,
+  confidence: HYPOTHESIS.properties.confidence,
+  why: HYPOTHESIS.properties.why,
+}, "Рабочая гипотеза о типе вызова — не диагноз");
+
 const AXIS_SHORT = obj({
   a: str("Полюс A — коротко, через то, что он даёт, а не через патологию"),
   b: str("Полюс B — так же"),
@@ -75,6 +83,11 @@ const READ_SCHEMA = obj({
   questions: arr(QUESTION, "От одного до шести вопросов. Ровно столько, сколько нужно, чтобы подтвердить или опровергнуть гипотезу."),
   question_plan: str("Одна фраза: почему именно столько вопросов и что они вместе проверяют"),
 }, "Первичное чтение ситуации");
+
+const READ_SCHEMA_LITE = (() => {
+  const { axes, hypothesis, ...rest } = READ_SCHEMA.properties;
+  return obj({ ...rest, hypothesis: HYPOTHESIS_LITE }, "Первичное чтение ситуации");
+})();
 
 const READING = obj({
   type: { type: "string", enum: ["problem", "dilemma", "paradox"] },
@@ -246,6 +259,17 @@ const STEP_READ = `ЗАДАЧА ЭТОГО ШАГА — первичное чт�
 Второй смысл вопросов — показать человеку, что на ситуацию можно смотреть по-разному. Пусть
 хотя бы один вопрос сам по себе будет для него неожиданным поворотом.`;
 
+// Шаг 1 в облегчённом режиме: без критериев и кандидатных осей — их подробно строит шаг 3.
+const STEP_READ_LITE = STEP_READ
+  .replace(`3. Выдвинуть гипотезу о типе вызова и оценить все шесть критериев по тому, что человек написал.
+   Там, где данных нет, ставь unknown — не додумывай.
+4. Предложить кандидатные оси натяжения (0–3).
+5. Составить вопросы.`, `3. Выдвинуть гипотезу о типе вызова: тип, уверенность и коротко почему. Про себя пройди
+   по шести критериям — вопросы должны закрывать те из них, по которым данных не хватает, —
+   но в ответ оценку критериев не выписывай.
+4. Составить вопросы.`);
+if (STEP_READ_LITE === STEP_READ) throw new Error("STEP_READ_LITE: текст шага 1 изменился, замена не сработала");
+
 const STEP_REFINE = `ЗАДАЧА ЭТОГО ШАГА — уточнение после ответов.
 1. Обнови гипотезу и оценку критериев с учётом ответов.
 2. Разверни ТРИ прочтения этой ситуации — как проблемы, как дилеммы, как парадокса. Каждое: как
@@ -303,10 +327,14 @@ const STEP_DILEMMA = `ЗАДАЧА ЭТОГО ШАГА — работа с ди�
 
 // effort — главный рычаг скорости. Умолчания подобраны замером; перебивается EFFORT= в .env.
 const EFFORT = process.env.EFFORT || null;
+// READ_MODE=full возвращает шаг 1 к прежнему виду: рассуждения и полный ответ.
+const READ_MODE = process.env.READ_MODE || "lite";
 const STEPS = {
   // 18000, не 12000: у DeepSeek размышления иногда съедают 5-6 тысяч токенов ещё до
   // ответа, и на 12000 модель изредка выжирала весь лимит и возвращала пустой JSON.
-  read: { schema: READ_SCHEMA, instructions: STEP_READ, max: 18000, effort: "medium" },
+  read: READ_MODE === "full"
+    ? { schema: READ_SCHEMA, instructions: STEP_READ, max: 18000, effort: "medium" }
+    : { schema: READ_SCHEMA_LITE, instructions: STEP_READ_LITE, max: 12000, effort: "medium", thinking: false },
   refine: { schema: REFINE_SCHEMA, instructions: STEP_REFINE, max: 20000, effort: "medium" },
   decide_paradox: { schema: DECIDE_PARADOX, instructions: STEP_PARADOX, max: 16000, effort: "medium" },
   decide_problem: { schema: DECIDE_PROBLEM, instructions: STEP_PROBLEM, max: 8000, effort: "low" },
@@ -364,6 +392,7 @@ export async function runStep(step, ctx) {
     schema: cfg.schema,
     maxTokens: cfg.max,
     effort,
+    thinking: cfg.thinking,
   });
   return { data: json, usage, provider: info };
 }

@@ -29,10 +29,12 @@ function deepseekProvider() {
   const dsEffort = (e) => process.env.DEEPSEEK_EFFORT ||
     ({ low: "low", medium: "low", high: "high", max: "max" }[e] || "high");
 
-  // DEEPSEEK_THINKING=off выключает рассуждения совсем — для замеров скорости.
-  const THINKING = (process.env.DEEPSEEK_THINKING || "on") !== "off";
+  // Рассуждения включаются по шагу (thinking в настройках шага). DEEPSEEK_THINKING=on/off
+  // перебивает для всех шагов — для замеров.
+  const thinkingFor = (step) => process.env.DEEPSEEK_THINKING
+    ? process.env.DEEPSEEK_THINKING !== "off" : step !== false;
 
-  async function once({ system, user, schema, maxTokens, effort }) {
+  async function once({ system, user, schema, maxTokens, effort, thinking }) {
     const sys = system.map(b => b.text).join("\n\n") +
       "\n\n## ФОРМАТ ОТВЕТА\nВерни ОДИН объект JSON строго по этой схеме и ничего кроме него — " +
       "без пояснений, без markdown-ограждений. Заполни все обязательные поля; " +
@@ -45,7 +47,7 @@ function deepseekProvider() {
       signal: AbortSignal.timeout(600000),
       body: JSON.stringify({
         model, max_tokens: maxTokens, stream: true,
-        ...(THINKING
+        ...(thinkingFor(thinking)
           ? { thinking: { type: "enabled" }, reasoning_effort: dsEffort(effort) }
           : { thinking: { type: "disabled" } }),
         response_format: { type: "json_object" },

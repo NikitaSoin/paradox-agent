@@ -566,6 +566,8 @@ table.lib th,.seg button,.badge,.hrow .when,.icon,.pop b,.chal .cur,.plan .h,.be
 .go{background:var(--brand); color:var(--on-brand); border-radius:4px; font-weight:800;
   text-transform:uppercase; letter-spacing:.03em; font-size:.88rem; padding:13px 26px}
 .go:hover{opacity:1; background:var(--brand-2)}
+.go.ghost{background:transparent; color:var(--brand); box-shadow:inset 0 0 0 2px var(--brand)}
+.go.ghost:hover{background:var(--brand-soft)}
 .more{color:var(--brand); font-weight:700; text-decoration-color:var(--brand-soft)}
 .more:hover{text-decoration-color:var(--brand)}
 :focus-visible{outline-color:var(--focus)}
@@ -613,3 +615,7 @@ input[type=range]::-moz-range-thumb{background:var(--brand)}
 @media print{
   .sheet-score b{color:#000}
 }
+
+/* Карта внутри фрейма для PDF */
+.pdf-body{background:#fff; margin:0; padding:0}
+.pdf-body .sheet{border:0; padding:0; box-shadow:none}

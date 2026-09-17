@@ -787,10 +787,12 @@ function viewSheet() {
     ${sheetIntro()}
     ${body}
   </div>
+  ${S.error && S.step === "sheet" ? `<p class="err noprint" style="margin-top:18px">${esc(S.error)}</p>` : ""}
   ${mailCard()}
   ${S.browse ? "" : contactCard()}
   <div class="acts noprint">
-    <button class="go" id="mailOpen">Отправить на почту</button>
+    <button class="go" id="pdfSave" ${pdfBusy ? "disabled" : ""}>${pdfBusy ? "Готовим файл…" : "Скачать PDF"}</button>
+    <button class="go ghost" id="mailOpen">Отправить на почту</button>
     <button class="back" onclick="window.print()">Распечатать</button>
     <button class="back" data-goto="decide">Назад</button>
     ${parkButton()}
@@ -811,6 +813,69 @@ function sheetIntro() {
     <p>${esc(S.restatedUser || S.read?.restated || "")}</p>
     ${score}
   </div>`;
+}
+
+/* ---------------- карта файлом PDF ---------------- */
+// Библиотека тяжёлая (~900 КБ), поэтому грузится только по нажатию.
+// Карта рисуется в невидимом фрейме шириной под А4: у фрейма своё «окно», поэтому
+// на узком экране телефона карта не обрезается и не перестраивается в одну колонку,
+// а прокрутка основной страницы не даёт пустых листов.
+let pdfBusy = false;
+
+function pdfFrame(sheetHtml) {
+  return new Promise((resolve, reject) => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;height:1200px;border:0;visibility:hidden";
+    document.body.appendChild(frame);
+    const fonts = document.querySelector('link[href*="fonts.googleapis"]')?.outerHTML || "";
+    frame.onload = async () => {
+      try {
+        const w = frame.contentWindow;
+        if (!w.html2pdf) throw new Error("нет библиотеки");
+        await w.document.fonts?.ready;
+        resolve(frame);
+      } catch (e) { frame.remove(); reject(e); }
+    };
+    frame.srcdoc = `<!doctype html><html lang="ru" data-theme="light"><head><meta charset="utf-8">
+      ${fonts}<link rel="stylesheet" href="/styles.css"></head>
+      <body class="pdf-body">${sheetHtml}<script src="/vendor/html2pdf.bundle.min.js"><\/script></body></html>`;
+  });
+}
+
+async function pdfSave() {
+  const sheet = $(".sheet");
+  if (!sheet || pdfBusy) return;
+  const html = sheet.outerHTML;
+  pdfBusy = true; S.error = null; render();
+  let frame = null;
+  try {
+    frame = await pdfFrame(html);
+    const w = frame.contentWindow;
+    // Настройки собираем в «мире» фрейма: библиотека проверяет массивы через instanceof,
+    // а массив из основной страницы для фрейма — чужой, и она его отвергает.
+    const opts = w.JSON.parse(JSON.stringify({
+      margin: [10, 10, 12, 10],
+      image: { type: "jpeg", quality: 0.93 },
+      html2canvas: { scale: 2, backgroundColor: "#ffffff" },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"], avoid: [".sheet-h", ".sheet-intro", ".pole", ".axgroup", ".plane-wrap", ".beam-track", ".meta > div", ".qs li", ".sect > p"] },
+    }));
+    opts.html2canvas.ignoreElements = (el) => el.classList?.contains("noprint");
+    const blob = await w.html2pdf().set(opts).from(w.document.querySelector(".sheet")).outputPdf("blob");
+    const date = new Date().toLocaleDateString("ru-RU").replaceAll(".", "-");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `Теория-парадоксов-карта-${date}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    console.error("[pdf]", e);
+    S.error = "Не получилось собрать PDF. Попробуйте ещё раз или отправьте карту на почту.";
+  } finally {
+    frame?.remove();
+    pdfBusy = false; render();
+  }
 }
 
 /* ---------------- отправка карты на почту ---------------- */
@@ -1316,6 +1381,7 @@ document.addEventListener("click", async (e) => {
     $("#mailTo")?.focus(); return;
   }
   if (e.target.closest("#mailSend")) { mailSend(); return; }
+  if (e.target.closest("#pdfSave")) { pdfSave(); return; }
 
   const sh = e.target.closest("[data-share]");
   if (sh) { S.contact.share = sh.dataset.share; S.contact.error = null; render(); return; }
